@@ -46,180 +46,6 @@ if (!isset($_SESSION['username'])) {
     $_SESSION['username'] = $uStmt->fetchColumn() ?: 'Unknown';
 }
 
-$routine_overtime_logs = getRoutineOvertimeLogs($main_parent_id, 25);
-$routine_overtime_stats = getRoutineOvertimeStats($main_parent_id);
-$overtimeByChild = $routine_overtime_stats['by_child'] ?? [];
-$overtimeByRoutine = $routine_overtime_stats['by_routine'] ?? [];
-$overtimeLogGroups = [];
-$overtimeLogsByRoutine = [];
-        if (!empty($routine_overtime_logs) && is_array($routine_overtime_logs)) {
-            foreach ($routine_overtime_logs as $log) {
-                $timestamp = strtotime($log['occurred_at']);
-                $dateKey = $timestamp ? date('Y-m-d', $timestamp) : 'unknown';
-        $dateLabel = $timestamp ? date('l, M j, Y', $timestamp) : 'Unknown date';
-        if (!isset($overtimeLogGroups[$dateKey])) {
-            $overtimeLogGroups[$dateKey] = [
-                'label' => $dateLabel,
-                'count' => 0,
-                'routines' => []
-            ];
-        }
-        $routineId = (int) ($log['routine_id'] ?? 0);
-        $routineKey = $routineId ?: md5($log['routine_title'] ?? 'Routine');
-        if (!isset($overtimeLogGroups[$dateKey]['routines'][$routineKey])) {
-            $overtimeLogGroups[$dateKey]['routines'][$routineKey] = [
-                'title' => $log['routine_title'] ?? 'Routine',
-                'entries' => []
-            ];
-        }
-        $overtimeLogGroups[$dateKey]['routines'][$routineKey]['entries'][] = $log;
-        $overtimeLogGroups[$dateKey]['count']++;
-
-        if (!isset($overtimeLogsByRoutine[$routineKey])) {
-            $overtimeLogsByRoutine[$routineKey] = [
-                'title' => $log['routine_title'] ?? 'Routine',
-                'entries' => []
-            ];
-        }
-        $overtimeLogsByRoutine[$routineKey]['entries'][] = $log;
-    }
-}
-$formatDuration = function($seconds) {
-    $seconds = max(0, (int) $seconds);
-    $minutes = intdiv($seconds, 60);
-    $remaining = $seconds % 60;
-    return sprintf('%02d:%02d', $minutes, $remaining);
-};
-$formatDurationOrDash = function($seconds) use ($formatDuration) {
-    if ($seconds === null) {
-        return '--:--';
-    }
-    $seconds = (int) $seconds;
-    if ($seconds <= 0) {
-        return '--:--';
-    }
-    return $formatDuration($seconds);
-};
-$formatMinutesLabel = function($totalMinutes) {
-    $totalMinutes = max(0, (int) $totalMinutes);
-    if ($totalMinutes <= 0) {
-        return '0m';
-    }
-    $hours = intdiv($totalMinutes, 60);
-    $minutes = $totalMinutes % 60;
-    if ($hours > 0 && $minutes > 0) {
-        return sprintf('%dh %dm', $hours, $minutes);
-    }
-    if ($hours > 0) {
-        return sprintf('%dh', $hours);
-    }
-    return sprintf('%dm', $minutes);
-};
-$calculateRoutineWindowMinutes = static function($startTime, $endTime) {
-    if (empty($startTime) || empty($endTime)) {
-        return null;
-    }
-    $start = DateTimeImmutable::createFromFormat('H:i:s', $startTime);
-    $end = DateTimeImmutable::createFromFormat('H:i:s', $endTime);
-    if (!$start || !$end) {
-        return null;
-    }
-    if ($end <= $start) {
-        $end = $end->modify('+1 day');
-    }
-    $seconds = $end->getTimestamp() - $start->getTimestamp();
-    return (int) round($seconds / 60);
-};
-$routineCompletionSessions = [];
-$routineCompletionTasks = [];
-try {
-    ensureRoutineCompletionTables();
-    $completionStmt = $db->prepare("
-        SELECT
-            rcl.id,
-            rcl.routine_id,
-            rcl.child_user_id,
-            rcl.completed_by,
-            rcl.started_at,
-            rcl.completed_at,
-            r.title AS routine_title,
-            r.start_time AS routine_start_time,
-            r.end_time AS routine_end_time,
-            COALESCE(r.bonus_points, 0) AS routine_bonus_points_worth,
-            (
-                SELECT COALESCE(SUM(COALESCE(rt2.point_value, 0)), 0)
-                FROM routines_routine_tasks rrt2
-                LEFT JOIN routine_tasks rt2 ON rrt2.routine_task_id = rt2.id
-                WHERE rrt2.routine_id = r.id
-            ) AS routine_task_points_worth,
-            (
-                SELECT rpl.task_points
-                FROM routine_points_logs rpl
-                WHERE rpl.routine_id = rcl.routine_id
-                    AND rpl.child_user_id = rcl.child_user_id
-                ORDER BY ABS(TIMESTAMPDIFF(SECOND, rpl.created_at, rcl.completed_at)) ASC
-                LIMIT 1
-            ) AS awarded_task_points,
-            (
-                SELECT rpl.bonus_points
-                FROM routine_points_logs rpl
-                WHERE rpl.routine_id = rcl.routine_id
-                    AND rpl.child_user_id = rcl.child_user_id
-                ORDER BY ABS(TIMESTAMPDIFF(SECOND, rpl.created_at, rcl.completed_at)) ASC
-                LIMIT 1
-            ) AS awarded_bonus_points,
-            COALESCE(
-                NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
-                NULLIF(u.name, ''),
-                u.username,
-                'Unknown'
-            ) AS child_display_name
-        FROM routine_completion_logs rcl
-        JOIN routines r ON rcl.routine_id = r.id
-        LEFT JOIN users u ON rcl.child_user_id = u.id
-        WHERE rcl.parent_user_id = :parent_id
-        ORDER BY rcl.completed_at DESC
-        LIMIT 15
-    ");
-    $completionStmt->execute([':parent_id' => $main_parent_id]);
-    $routineCompletionSessions = $completionStmt->fetchAll(PDO::FETCH_ASSOC);
-    $sessionIds = array_values(array_filter(array_map(static function ($row) {
-        return (int) ($row['id'] ?? 0);
-    }, $routineCompletionSessions)));
-    if (!empty($sessionIds)) {
-        $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
-        $taskStmt = $db->prepare("
-            SELECT
-                rct.completion_log_id,
-                rct.routine_task_id,
-                rct.sequence_order,
-                rct.completed_at,
-                rct.status_screen_seconds,
-                rct.scheduled_seconds,
-                rct.actual_seconds,
-                rct.stars_awarded,
-                rt.title AS task_title,
-                rt.time_limit AS task_time_limit
-            FROM routine_completion_tasks rct
-            LEFT JOIN routine_tasks rt ON rct.routine_task_id = rt.id
-            WHERE rct.completion_log_id IN ($placeholders)
-            ORDER BY rct.completion_log_id DESC, rct.sequence_order ASC, rct.id ASC
-        ");
-        $taskStmt->execute($sessionIds);
-        foreach ($taskStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $logId = (int) ($row['completion_log_id'] ?? 0);
-            if ($logId) {
-                if (!isset($routineCompletionTasks[$logId])) {
-                    $routineCompletionTasks[$logId] = [];
-                }
-                $routineCompletionTasks[$logId][] = $row;
-            }
-        }
-    }
-} catch (Exception $e) {
-    error_log("Failed to load routine completion logs: " . $e->getMessage());
-}
-
 // Approve a pending task from a parent notification.
 // Returns a result message string.
 function handleApproveTaskFromNotification(int $task_id, int $main_parent_id): string {
@@ -1488,82 +1314,11 @@ function renderStreakCheckSvg($suffix) {
         .upload-preview { max-width: 100px; max-height: 100px; border-radius: 50%; }
         .mother-badge { background: #e91e63; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
         .father-badge { background: #2196f3; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
-        .routine-completion-section { margin-top: 20px; background: #ffffff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-        .routine-completion-section h2 { margin-top: 0; }
-        .routine-completion-list { display: grid; gap: 12px; margin-top: 12px; }
-        .routine-completion-card { border: 1px solid #e3e7eb; border-radius: 10px; overflow: hidden; background: #fff; }
-        .routine-completion-card > summary { padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px; list-style: none; background: #f5f8fb; }
-        .routine-completion-card > summary::-webkit-details-marker { display: none; }
-        .completion-summary { display: grid; gap: 4px; }
-        .completion-title { font-weight: 700; color: #0d47a1; }
-        .completion-child { color: #455a64; font-size: 0.9rem; }
-        .completion-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #546e7a; font-size: 0.9rem; }
-        .completion-quick-stats { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 6px 14px; margin-top: 4px; font-size: 0.86rem; color: #37474f; }
-        .completion-quick-stats strong { color: #263238; }
-        .completion-badge { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
-        .completion-badge.child { background: #e3f2fd; color: #0d47a1; }
-        .completion-badge.parent { background: #ffe0b2; color: #bf360c; }
-        .completion-body { padding: 12px 16px; display: grid; gap: 12px; }
-        .completion-times { display: grid; gap: 6px; color: #37474f; }
-        .completion-note { color: #bf360c; font-weight: 600; }
-        .completion-task-list { display: grid; gap: 8px; }
-        .completion-task-row { display: grid; gap: 6px; padding: 10px; border: 1px solid #e9edf2; border-radius: 8px; background: #f9fbfd; }
-        .completion-task-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-        .completion-task-title { font-weight: 600; color: #263238; }
-        .completion-task-meta { font-size: 0.9rem; color: #37474f; display: flex; gap: 10px; flex-wrap: wrap; }
-        .completion-task-meta strong { color: #455a64; }
-        .completion-task-empty { color: #666; font-style: italic; }
-        .routine-analytics { margin-top: 20px; background: #fafafa; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-        .routine-analytics h2 { margin-top: 0; }
-        .overtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
-        .overtime-card { background: #ffffff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
-        .overtime-card h3 { margin-top: 0; font-size: 1.05em; }
-        .overtime-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.95em; }
-        .overtime-table th, .overtime-table td { border: 1px solid #e0e0e0; padding: 8px; text-align: left; }
-        .overtime-table th { background: #f0f4f8; font-weight: 600; }
-        .overtime-empty { font-style: italic; color: #666; margin-top: 12px; }
-        .routine-log-link { background: none; border: none; color: #1565c0; cursor: pointer; padding: 0; font-weight: 700; text-decoration: underline; }
-        .routine-log-link:hover { color: #0d47a1; }
-        .overtime-accordion { display: grid; gap: 12px; margin-top: 12px; }
-        .overtime-date { border: 1px solid #e3e7eb; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-        .overtime-date > summary { padding: 12px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; background: #f5f8fb; list-style: none; }
-        .overtime-date > summary::-webkit-details-marker { display: none; }
-        .overtime-date-count { color: #607d8b; font-weight: 600; font-size: 0.92rem; }
-        .overtime-routine { border-top: 1px solid #eef1f4; }
-        .overtime-routine > summary { padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; color: #0d47a1; list-style: none; }
-        .overtime-routine > summary::-webkit-details-marker { display: none; }
-        .overtime-routine-count { color: #455a64; font-size: 0.9rem; font-weight: 600; }
-        .overtime-card-list { display: grid; gap: 10px; padding: 0 14px 14px; }
-        .overtime-card-row { background: linear-gradient(145deg, #ffffff, #f7f9fb); border: 1px solid #e3e7eb; border-radius: 10px; padding: 12px; display: grid; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-        .ot-row-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-        .ot-task { font-weight: 700; color: #0d47a1; }
-        .ot-time { color: #546e7a; font-size: 0.9rem; }
-        .ot-meta { font-size: 0.92rem; color: #37474f; display: flex; gap: 10px; flex-wrap: wrap; }
-        .ot-meta strong { color: #455a64; }
-        .ot-overtime { color: #c62828; font-weight: 700; }
-        .routine-log-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 16px; }
-        .routine-log-modal.active { display: flex; }
-        .routine-log-dialog { background: #fff; border-radius: 12px; max-width: 640px; width: min(640px, 100%); max-height: 80vh; overflow: hidden; box-shadow: 0 18px 36px rgba(0,0,0,0.25); display: grid; grid-template-rows: auto 1fr; }
-        .routine-log-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #e0e0e0; }
-        .routine-log-title { margin: 0; font-size: 1.1rem; font-weight: 700; color: #0d47a1; }
-        .routine-log-close { border: none; background: transparent; font-size: 1.3rem; cursor: pointer; color: #455a64; }
-        .routine-log-body { padding: 14px 16px; overflow-y: auto; display: grid; gap: 10px; }
-        .routine-log-empty { color: #666; font-style: italic; }
-        .routine-log-item { border: 1px solid #e3e7eb; border-radius: 10px; padding: 10px; display: grid; gap: 6px; background: #f9fbfd; }
-        .routine-log-item .meta { color: #546e7a; font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 10px; }
-        .routine-log-item .overtime { color: #c62828; font-weight: 700; }
         @media (max-width: 900px) {
             .child-info-card { grid-template-columns: minmax(160px, max-content) minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; row-gap: 16px; align-items: start; }
             .child-info-left { display: flex; flex-direction: column; gap: 18px; grid-column: 1; }
             .child-info-body { grid-column: 2; }
             .child-schedule-card { grid-column: 3; }
-        }
-        @media (max-width: 768px) {
-            .overtime-date > summary, .overtime-routine > summary { padding: 12px; }
-            .ot-row-header { flex-direction: column; align-items: flex-start; }
-            .routine-completion-card > summary { flex-direction: column; align-items: flex-start; }
-            .completion-quick-stats { grid-template-columns: 1fr; }
-            .completion-task-header { flex-direction: column; align-items: flex-start; }
         }
         @media (max-width: 768px) {
             .manage-family { padding: 8px; }
@@ -1611,9 +1366,6 @@ function renderStreakCheckSvg($suffix) {
         .member-remove-modal .actions .button { width: 100%; }
         .member-remove-modal .subtext { color: #555; font-size: 0.95rem; }
     </style>
-    <script>
-        window.RoutineOvertimeByRoutine = <?php echo json_encode($overtimeLogsByRoutine, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
-    </script>
     <script>
         // JS for Manage Family Wizard (step-by-step)
         document.addEventListener('DOMContentLoaded', function() {
@@ -1736,22 +1488,6 @@ function renderStreakCheckSvg($suffix) {
                     redeemedCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }
-            const overtimeRoutineParam = params.get('overtime_routine');
-            if (overtimeRoutineParam) {
-                const target = document.querySelector(`.overtime-routine[data-routine-id="${overtimeRoutineParam}"]`);
-                if (target) {
-                    target.open = true;
-                    const dateWrapper = target.closest('.overtime-date');
-                    if (dateWrapper) {
-                        dateWrapper.open = true;
-                    }
-                    const overtimeSection = document.getElementById('overtime-section');
-                    if (overtimeSection && typeof overtimeSection.scrollIntoView === 'function') {
-                        overtimeSection.scrollIntoView({ behavior: 'smooth' });
-                    }
-                }
-            }
-
             const historyButtons = document.querySelectorAll('[data-child-history-open]');
             const historyModals = document.querySelectorAll('[data-child-history-modal]');
             const applyHistoryFilter = (modal, filter) => {
@@ -2552,84 +2288,6 @@ function renderStreakCheckSvg($suffix) {
                     starsInput.addEventListener('input', updateAdjustStarsTotal);
                 }
             }
-
-            const routineLogModal = document.getElementById('routine-log-modal');
-            const routineLogTitle = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-title"]') : null;
-            const routineLogBody = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-body"]') : null;
-            const routineLogClose = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-close"]') : null;
-            const routineLogsByRoutine = window.RoutineOvertimeByRoutine || {};
-
-            const formatDuration = (seconds) => {
-                const safe = Math.max(0, Math.floor(Number(seconds) || 0));
-                const mins = Math.floor(safe / 60);
-                const secs = safe % 60;
-                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-            };
-
-            const openRoutineLogModal = (routineId, routineTitle) => {
-                if (!routineLogModal || !routineLogBody || !routineLogTitle) return;
-                const key = String(routineId || routineTitle || '');
-                const group = routineLogsByRoutine[String(routineId)] || routineLogsByRoutine[key] || null;
-                const entries = group && Array.isArray(group.entries) ? group.entries : [];
-                routineLogTitle.textContent = routineTitle || (group ? group.title : 'Routine Overtime');
-                routineLogBody.innerHTML = '';
-                if (!entries.length) {
-                    const empty = document.createElement('div');
-                    empty.className = 'routine-log-empty';
-                    empty.textContent = 'No recent overtime events for this routine.';
-                    routineLogBody.appendChild(empty);
-                } else {
-                    entries.forEach(entry => {
-                        const item = document.createElement('div');
-                        item.className = 'routine-log-item';
-                        const when = entry.occurred_at ? new Date(entry.occurred_at) : null;
-                        const header = document.createElement('div');
-                        header.className = 'meta';
-                        header.textContent = when ? when.toLocaleString() : 'Date unavailable';
-                        const child = document.createElement('div');
-                        child.className = 'meta';
-                        child.textContent = `Child: ${entry.child_display_name || 'Unknown'}`;
-                        const task = document.createElement('div');
-                        task.className = 'meta';
-                        task.textContent = `Task: ${entry.task_title || 'Task'}`;
-                        const times = document.createElement('div');
-                        times.className = 'meta';
-                        times.textContent = `Scheduled: ${formatDuration(entry.scheduled_seconds)} - Actual: ${formatDuration(entry.actual_seconds)}`;
-                        const overtime = document.createElement('div');
-                        overtime.className = 'overtime';
-                        overtime.textContent = `Overtime: ${formatDuration(entry.overtime_seconds)}`;
-                        item.append(header, child, task, times, overtime);
-                        routineLogBody.appendChild(item);
-                    });
-                }
-                routineLogModal.classList.add('active');
-                routineLogModal.setAttribute('aria-hidden', 'false');
-            };
-
-            const closeRoutineLogModal = () => {
-                if (!routineLogModal) return;
-                routineLogModal.classList.remove('active');
-                routineLogModal.setAttribute('aria-hidden', 'true');
-            };
-
-            if (routineLogClose) {
-                routineLogClose.addEventListener('click', closeRoutineLogModal);
-            }
-            if (routineLogModal) {
-                routineLogModal.addEventListener('click', (event) => {
-                    if (event.target === routineLogModal) {
-                        closeRoutineLogModal();
-                    }
-                });
-            }
-
-            document.querySelectorAll('[data-routine-log-trigger]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const routineId = btn.getAttribute('data-routine-id');
-                    const routineTitle = btn.getAttribute('data-routine-title');
-                    openRoutineLogModal(routineId, routineTitle);
-                });
-            });
 
             // Child removal: modal with soft-remove or hard-delete
             const childRemoveModal = document.querySelector('[data-child-remove-modal]');
