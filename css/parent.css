@@ -191,6 +191,10 @@
     display: none;
   }
 
+  .parent-header__nav {
+    display: block;
+  }
+
   .nav-links {
     display: flex;
   }
