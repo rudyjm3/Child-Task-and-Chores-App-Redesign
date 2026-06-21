@@ -156,15 +156,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($_FILES['avatar_upload']) && $_FILES['avatar_upload']['error'] == 0) {
                 $file_size = $_FILES['avatar_upload']['size'];
                 $file_type = strtolower(pathinfo($_FILES['avatar_upload']['name'], PATHINFO_EXTENSION));
-                if ($file_size > 3 * 1024 * 1024 || !in_array($file_type, ['jpg', 'jpeg', 'png'])) {
-                    $message = "Upload failed: File too large (>3MB) or invalid type (JPG/PNG only).";
+                if ($file_size > 3 * 1024 * 1024 || !in_array($file_type, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+                    $message = "Upload failed: File too large (>3MB) or invalid type (JPG, PNG, GIF, WEBP only).";
                 } else {
                     $upload_dir = __DIR__ . '/uploads/avatars/';
                     if (!is_dir($upload_dir)) {
                         mkdir($upload_dir, 0755, true);
                     }
-                    $file_ext = strtolower(pathinfo($_FILES['avatar_upload']['name'], PATHINFO_EXTENSION));
-                    $file_name = uniqid() . '_' . pathinfo($_FILES['avatar_upload']['name'], PATHINFO_FILENAME) . '.' . $file_ext;
+                    $file_name = uniqid() . '_' . pathinfo($_FILES['avatar_upload']['name'], PATHINFO_FILENAME) . '.' . $file_type;
                     $upload_path = 'uploads/avatars/' . $file_name;
                     if (move_uploaded_file($_FILES['avatar_upload']['tmp_name'], __DIR__ . '/' . $upload_path)) {
                         // Resize image (GD library)

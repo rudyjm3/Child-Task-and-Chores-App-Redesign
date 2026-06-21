@@ -194,12 +194,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($photoRequired && !$hasUpload) {
                 $message = "Photo proof is required to complete this task.";
             } else {
+                $canProceed = true;
                 if ($hasUpload) {
-                    $ext = pathinfo($_FILES['photo_proof']['name'], PATHINFO_EXTENSION);
-                    $ext = $ext ? '.' . strtolower($ext) : '';
-                    $photo_proof = 'uploads/task_' . (int) $task_id . '_' . time() . $ext;
+                    $ext = strtolower(pathinfo($_FILES['photo_proof']['name'], PATHINFO_EXTENSION));
+                    $allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                    if (!in_array($ext, $allowedExts, true)) {
+                        $message = "Invalid file type. Allowed: JPG, PNG, GIF, WEBP.";
+                        $canProceed = false;
+                    } else {
+                        $photo_proof = 'uploads/task_' . (int) $task_id . '_' . time() . '.' . $ext;
+                    }
                 }
-                if (completeTask($task_id, $childIdForComplete, $photo_proof, $instance_date)) {
+                if ($canProceed && completeTask($task_id, $childIdForComplete, $photo_proof, $instance_date)) {
                     if ($photo_proof && $hasUpload) {
                         move_uploaded_file($_FILES['photo_proof']['tmp_name'], $photo_proof);
                     }
