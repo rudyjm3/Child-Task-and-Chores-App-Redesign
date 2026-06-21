@@ -43,6 +43,11 @@ All colors are defined as CSS custom properties on `:root`. Use these variables 
   --color-danger:        #DC2626;
   --color-danger-light:  #FEE2E2;
 
+  /* Badge-safe text — meet WCAG AA 4.5:1 on their -light counterparts */
+  --color-success-dark:  #065F46;   /* on #D1FAE5 ≈ 7.5:1 */
+  --color-warning-dark:  #92400E;   /* on #FEF3C7 ≈ 8.0:1 */
+  --color-danger-dark:   #991B1B;   /* on #FEE2E2 ≈ 5.6:1 */
+
   /* Gold / Points */
   --color-gold:          #F59E0B;
   --color-gold-light:    #FEF3CD;
@@ -213,11 +218,11 @@ Every task and goal card shares the same shell. Only the left accent strip color
 
 | Status | Background | Text color |
 |--------|-----------|------------|
-| Done | `--color-success-light` | `--color-success` |
+| Done | `--color-success-light` | `--color-success-dark` |
 | To Do | `--color-primary-light` | `--color-primary` |
-| Pending | `--color-warning-light` | `--color-warning` |
-| Overdue | `--color-danger-light` | `--color-danger` |
-| Approve? | `--color-warning-light` | `--color-warning` |
+| Pending | `--color-warning-light` | `--color-warning-dark` |
+| Overdue | `--color-danger-light` | `--color-danger-dark` |
+| Approve? | `--color-warning-light` | `--color-warning-dark` |
 
 ### 6.2 Hero Card (Child Dashboard)
 
@@ -622,7 +627,7 @@ Used on both Parent Dashboard (quick glance row) and Goals Child View (Active / 
 
 **State rules:**
 - Completed tasks: icon background opacity 0.30 instead of 0.12, title text opacity 0.6, status badge = "Done" (success green).
-- "Complete!" button (84×28, primary bg) on incomplete tasks. Tapping triggers points animation and status change.
+- "Complete!" button (84×44, primary bg) on incomplete tasks. Tapping triggers points animation and status change.
 
 ---
 
