@@ -19,6 +19,117 @@ if (!isset($_SESSION['name'])) {
 $family_root_id = getFamilyRootId($_SESSION['user_id']);
 $isParentContext = canCreateContent($_SESSION['user_id']);
 
+// Routine Completion Timeline & Overtime Insights (parent view only)
+$routine_overtime_logs = [];
+$routine_overtime_stats = [];
+$overtimeByChild = [];
+$overtimeByRoutine = [];
+$overtimeLogGroups = [];
+$overtimeLogsByRoutine = [];
+$routineCompletionSessions = [];
+$routineCompletionTasks = [];
+$formatDuration = static function($seconds) {
+    $seconds = max(0, (int) $seconds);
+    $minutes = intdiv($seconds, 60);
+    $remaining = $seconds % 60;
+    return sprintf('%02d:%02d', $minutes, $remaining);
+};
+$formatDurationOrDash = static function($seconds) use ($formatDuration) {
+    if ($seconds === null) { return '--:--'; }
+    $seconds = (int) $seconds;
+    if ($seconds <= 0) { return '--:--'; }
+    return $formatDuration($seconds);
+};
+if ($isParentContext) {
+    $routine_overtime_logs = getRoutineOvertimeLogs($family_root_id, 25);
+    $routine_overtime_stats = getRoutineOvertimeStats($family_root_id);
+    $overtimeByChild = $routine_overtime_stats['by_child'] ?? [];
+    $overtimeByRoutine = $routine_overtime_stats['by_routine'] ?? [];
+    if (!empty($routine_overtime_logs) && is_array($routine_overtime_logs)) {
+        foreach ($routine_overtime_logs as $log) {
+            $timestamp = strtotime($log['occurred_at']);
+            $dateKey = $timestamp ? date('Y-m-d', $timestamp) : 'unknown';
+            $dateLabel = $timestamp ? date('l, M j, Y', $timestamp) : 'Unknown date';
+            if (!isset($overtimeLogGroups[$dateKey])) {
+                $overtimeLogGroups[$dateKey] = ['label' => $dateLabel, 'count' => 0, 'routines' => []];
+            }
+            $routineId = (int) ($log['routine_id'] ?? 0);
+            $routineKey = $routineId ?: md5($log['routine_title'] ?? 'Routine');
+            if (!isset($overtimeLogGroups[$dateKey]['routines'][$routineKey])) {
+                $overtimeLogGroups[$dateKey]['routines'][$routineKey] = ['title' => $log['routine_title'] ?? 'Routine', 'entries' => []];
+            }
+            $overtimeLogGroups[$dateKey]['routines'][$routineKey]['entries'][] = $log;
+            $overtimeLogGroups[$dateKey]['count']++;
+            if (!isset($overtimeLogsByRoutine[$routineKey])) {
+                $overtimeLogsByRoutine[$routineKey] = ['title' => $log['routine_title'] ?? 'Routine', 'entries' => []];
+            }
+            $overtimeLogsByRoutine[$routineKey]['entries'][] = $log;
+        }
+    }
+    try {
+        ensureRoutineCompletionTables();
+        $completionStmt = $db->prepare("
+            SELECT
+                rcl.id,
+                rcl.routine_id,
+                rcl.child_user_id,
+                rcl.completed_by,
+                rcl.started_at,
+                rcl.completed_at,
+                r.title AS routine_title,
+                COALESCE(
+                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                    NULLIF(u.name, ''),
+                    u.username,
+                    'Unknown'
+                ) AS child_display_name
+            FROM routine_completion_logs rcl
+            JOIN routines r ON rcl.routine_id = r.id
+            LEFT JOIN users u ON rcl.child_user_id = u.id
+            WHERE rcl.parent_user_id = :parent_id
+            ORDER BY rcl.completed_at DESC
+            LIMIT 15
+        ");
+        $completionStmt->execute([':parent_id' => $family_root_id]);
+        $routineCompletionSessions = $completionStmt->fetchAll(PDO::FETCH_ASSOC);
+        $sessionIds = array_values(array_filter(array_map(static function ($row) {
+            return (int) ($row['id'] ?? 0);
+        }, $routineCompletionSessions)));
+        if (!empty($sessionIds)) {
+            $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
+            $taskStmt = $db->prepare("
+                SELECT
+                    rct.completion_log_id,
+                    rct.routine_task_id,
+                    rct.sequence_order,
+                    rct.completed_at,
+                    rct.status_screen_seconds,
+                    rct.scheduled_seconds,
+                    rct.actual_seconds,
+                    rct.stars_awarded,
+                    rt.title AS task_title,
+                    rt.time_limit AS task_time_limit
+                FROM routine_completion_tasks rct
+                LEFT JOIN routine_tasks rt ON rct.routine_task_id = rt.id
+                WHERE rct.completion_log_id IN ($placeholders)
+                ORDER BY rct.completion_log_id DESC, rct.sequence_order ASC, rct.id ASC
+            ");
+            $taskStmt->execute($sessionIds);
+            foreach ($taskStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $logId = (int) ($row['completion_log_id'] ?? 0);
+                if ($logId) {
+                    if (!isset($routineCompletionTasks[$logId])) {
+                        $routineCompletionTasks[$logId] = [];
+                    }
+                    $routineCompletionTasks[$logId][] = $row;
+                }
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Failed to load routine completion logs: " . $e->getMessage());
+    }
+}
+
 $routinePreferences = getRoutinePreferences($family_root_id);
 
 require_once __DIR__ . '/includes/notifications_bootstrap.php';
@@ -1204,6 +1315,9 @@ $pageState = [
 $bodyClasses = [];
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     $bodyClasses[] = 'child-theme';
+    $bodyClasses[] = 'role-child';
+} else {
+    $bodyClasses[] = 'role-parent';
 }
 ?>
 <!DOCTYPE html>
@@ -1212,7 +1326,12 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Management</title>
-    <link rel="stylesheet" href="css/main.css?v=3.26.0">
+    <link rel="stylesheet" href="css/main.css?v=3.27.0">
+    <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
+    <link rel="stylesheet" href="css/child.css?v=3.27.0">
+    <?php else: ?>
+    <link rel="stylesheet" href="css/parent.css?v=3.27.0">
+    <?php endif; ?>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         .page-messages { max-width: 960px; margin: 0 auto 20px; }
@@ -1634,34 +1753,7 @@ margin-bottom: 20px;}
             .status-summary { font-size: 1rem; }
             .summary-footer strong { font-size: 1.3rem; }
         }
-        .page-header { padding: 18px 16px 12px; display: grid; gap: 12px; text-align: left; }
-        .page-header-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-        .page-header-title { display: grid; gap: 6px; }
-        .page-header-title h1 { margin: 0; font-size: 1.1rem; color: #2c2c2c; }
-        .page-header-meta { margin: 0; color: #616161; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.6rem; }
-        .page-header-actions { display: flex; gap: 10px; align-items: center; }
-        .page-header-action { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #dfe8df; background: #fff; color: #6d6d6d; box-shadow: 0 6px 14px rgba(0,0,0,0.08); cursor: pointer; }
-        .page-header-action i { font-size: 1.1rem; }
-        .page-header-action:hover { color: #4caf50; border-color: #c8e6c9; }
-        .nav-links { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; padding: 10px 12px; border-radius: 18px; background: #fff; border: 1px solid #eceff4; box-shadow: 0 8px 18px rgba(0,0,0,0.06); }
-        .nav-link,
-        .nav-mobile-link { flex: 1 1 90px; display: grid; justify-items: center; gap: 4px; text-decoration: none; color: #6d6d6d; font-weight: 600; font-size: 0.75rem; border-radius: 12px; padding: 6px 4px; }
-        .nav-link i,
-        .nav-mobile-link i { font-size: 1.2rem; }
-        .nav-link.is-active,
-        .nav-mobile-link.is-active { color: #4caf50; }
-        .nav-link.is-active i,
-        .nav-mobile-link.is-active i { color: #4caf50; }
-        .nav-link:hover,
-        .nav-mobile-link:hover { color: #4caf50; }
         .nav-link-button { background: transparent; border: none; cursor: pointer; }
-        .nav-mobile-bottom { display: none; gap: 6px; padding: 10px 12px; border-top: 1px solid #e0e0e0; background: #fff; position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; }
-        .nav-mobile-bottom .nav-mobile-link { flex: 1; }
-        @media (max-width: 768px) {
-            .nav-links { display: none; }
-            .nav-mobile-bottom { display: flex; justify-content: space-between; }
-            body { padding-bottom: 72px; }
-        }
         .routine-action-bar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 10px 0 18px; }
         .routine-create-button { width: 52px; height: 52px; border-radius: 50%; border: none; background: #ff9800; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 1.4rem; cursor: pointer; box-shadow: 0 6px 14px rgba(255, 152, 0, 0.35); }
         .routine-create-button:hover { background: #fb8c00; }
@@ -1691,6 +1783,71 @@ margin-bottom: 20px;}
         .help-body { padding: 12px 16px 16px; overflow-y: auto; display: grid; gap: 12px; }
         .help-section h3 { margin: 0 0 6px; font-size: 1rem; color: #37474f; }
         .help-section ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: #455a64; }
+        /* ── Routine Completion Timeline ── */
+        .routine-completion-section { margin-top: 20px; background: #ffffff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+        .routine-completion-section h2 { margin-top: 0; }
+        .routine-completion-list { display: grid; gap: 12px; margin-top: 12px; }
+        .routine-completion-card { border: 1px solid #e3e7eb; border-radius: 10px; overflow: hidden; background: #fff; }
+        .routine-completion-card > summary { padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px; list-style: none; background: #f5f8fb; }
+        .routine-completion-card > summary::-webkit-details-marker { display: none; }
+        .completion-summary { display: grid; gap: 4px; }
+        .completion-title { font-weight: 700; color: #0d47a1; }
+        .completion-child { color: #455a64; font-size: 0.9rem; }
+        .completion-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #546e7a; font-size: 0.9rem; }
+        .completion-badge { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+        .completion-badge.child { background: #e3f2fd; color: #0d47a1; }
+        .completion-badge.parent { background: #ffe0b2; color: #bf360c; }
+        .completion-body { padding: 12px 16px; display: grid; gap: 12px; }
+        .completion-times { display: grid; gap: 6px; color: #37474f; }
+        .completion-note { color: #bf360c; font-weight: 600; }
+        .completion-task-list { display: grid; gap: 8px; }
+        .completion-task-row { display: grid; gap: 6px; padding: 10px; border: 1px solid #e9edf2; border-radius: 8px; background: #f9fbfd; }
+        .completion-task-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .completion-task-title { font-weight: 600; color: #263238; }
+        .completion-task-meta { font-size: 0.9rem; color: #37474f; display: flex; gap: 10px; flex-wrap: wrap; }
+        .completion-task-meta strong { color: #455a64; }
+        .completion-task-empty { color: #666; font-style: italic; }
+        /* ── Routine Overtime Insights ── */
+        .routine-analytics { margin-top: 20px; background: #fafafa; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+        .routine-analytics h2 { margin-top: 0; }
+        .overtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+        .overtime-card { background: #ffffff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+        .overtime-card h3 { margin-top: 0; font-size: 1.05em; }
+        .overtime-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.95em; }
+        .overtime-table th, .overtime-table td { border: 1px solid #e0e0e0; padding: 8px; text-align: left; }
+        .overtime-table th { background: #f0f4f8; font-weight: 600; }
+        .overtime-empty { font-style: italic; color: #666; margin-top: 12px; }
+        .routine-log-link { background: none; border: none; color: #1565c0; cursor: pointer; padding: 0; font-weight: 700; text-decoration: underline; }
+        .routine-log-link:hover { color: #0d47a1; }
+        .overtime-accordion { display: grid; gap: 12px; margin-top: 12px; }
+        .overtime-date { border: 1px solid #e3e7eb; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .overtime-date > summary { padding: 12px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; background: #f5f8fb; list-style: none; }
+        .overtime-date > summary::-webkit-details-marker { display: none; }
+        .overtime-date-count { color: #607d8b; font-weight: 600; font-size: 0.92rem; }
+        .overtime-routine { border-top: 1px solid #eef1f4; }
+        .overtime-routine > summary { padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; color: #0d47a1; list-style: none; }
+        .overtime-routine > summary::-webkit-details-marker { display: none; }
+        .overtime-routine-count { color: #455a64; font-size: 0.9rem; font-weight: 600; }
+        .overtime-card-list { display: grid; gap: 10px; padding: 0 14px 14px; }
+        .overtime-card-row { background: linear-gradient(145deg, #ffffff, #f7f9fb); border: 1px solid #e3e7eb; border-radius: 10px; padding: 12px; display: grid; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .ot-row-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .ot-task { font-weight: 700; color: #0d47a1; }
+        .ot-time { color: #546e7a; font-size: 0.9rem; }
+        .ot-meta { font-size: 0.92rem; color: #37474f; display: flex; gap: 10px; flex-wrap: wrap; }
+        .ot-meta strong { color: #455a64; }
+        .ot-overtime { color: #c62828; font-weight: 700; }
+        /* ── Routine Log Modal ── */
+        .routine-log-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 16px; }
+        .routine-log-modal.active { display: flex; }
+        .routine-log-dialog { background: #fff; border-radius: 12px; max-width: 640px; width: min(640px, 100%); max-height: 80vh; overflow: hidden; box-shadow: 0 18px 36px rgba(0,0,0,0.25); display: grid; grid-template-rows: auto 1fr; }
+        .routine-log-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #e0e0e0; }
+        .routine-log-title { margin: 0; font-size: 1.1rem; font-weight: 700; color: #0d47a1; }
+        .routine-log-close { border: none; background: transparent; font-size: 1.3rem; cursor: pointer; color: #455a64; }
+        .routine-log-body { padding: 14px 16px; overflow-y: auto; display: grid; gap: 10px; }
+        .routine-log-empty { color: #666; font-style: italic; }
+        .routine-log-item { border: 1px solid #e3e7eb; border-radius: 10px; padding: 10px; display: grid; gap: 6px; background: #f9fbfd; }
+        .routine-log-item .meta { color: #546e7a; font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 10px; }
+        .routine-log-item .overtime { color: #c62828; font-weight: 700; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
@@ -1704,68 +1861,101 @@ margin-bottom: 20px;}
         $rewardsActive = $currentPage === 'rewards.php';
         $profileActive = $currentPage === 'profile.php';
     ?>
-    <header class="page-header">
-        <div class="page-header-top">
-            <div class="page-header-title">
-                <h1>Routine Management</h1>
-                <p class="page-header-meta">
-                    Welcome back, <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'User'); ?>
-                    <?php if ($welcome_role_label): ?>
-                        <span class="role-badge"><?php echo htmlspecialchars($welcome_role_label); ?></span>
-                    <?php endif; ?>
-                </p>
-            </div>
-            <div class="page-header-actions">
-                <?php if (!empty($isParentNotificationUser)): ?>
-                    <button type="button" class="page-header-action parent-notification-trigger" data-parent-notify-trigger aria-label="Notifications">
-                        <i class="fa-solid fa-bell"></i>
-                        <?php if ($parentNotificationCount > 0): ?>
-                            <span class="parent-notification-badge"><?php echo (int) $parentNotificationCount; ?></span>
-                        <?php endif; ?>
-                    </button>
-                    <a class="page-header-action" href="dashboard_parent.php#manage-family" aria-label="Family settings">
-                        <i class="fa-solid fa-gear"></i>
-                    </a>
-                <?php elseif (!empty($isChildNotificationUser)): ?>
-                    <button type="button" class="page-header-action notification-trigger" data-child-notify-trigger aria-label="Notifications">
-                        <i class="fa-solid fa-bell"></i>
-                        <?php if ($notificationCount > 0): ?>
-                            <span class="notification-badge"><?php echo (int) $notificationCount; ?></span>
-                        <?php endif; ?>
-                    </button>
-                <?php endif; ?>
-                <a class="page-header-action" href="logout.php" aria-label="Logout">
-                    <i class="fa-solid fa-right-from-bracket"></i>
-                </a>
-            </div>
+    <?php if ($isParentContext): ?>
+    <header class="parent-header">
+      <div class="parent-header__top">
+        <div class="parent-header__titles">
+          <span class="parent-header__greeting">Welcome back</span>
+          <span class="parent-header__name">
+            <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'User'); ?>
+            <?php if ($welcome_role_label): ?>
+              <span class="role-badge"><?php echo htmlspecialchars($welcome_role_label); ?></span>
+            <?php endif; ?>
+          </span>
         </div>
+        <div class="parent-header__actions">
+          <?php if (!empty($isParentNotificationUser)): ?>
+            <button type="button" class="page-header-action parent-notification-trigger" data-parent-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($parentNotificationCount > 0): ?>
+                <span class="parent-notification-badge"><?php echo (int) $parentNotificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+            <a class="page-header-action" href="dashboard_parent.php#manage-family" aria-label="Family settings">
+              <i class="fa-solid fa-gear"></i>
+            </a>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <div class="parent-header__nav">
         <nav class="nav-links" aria-label="Primary">
-            <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
-                <i class="fa-solid fa-house"></i>
-                <span>Dashboard</span>
-            </a>
-            <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
-                <i class="fa-solid fa-repeat week-item-icon"></i>
-                <span>Routines</span>
-            </a>
-            <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
-                <i class="fa-solid fa-list-check"></i>
-                <span>Tasks</span>
-            </a>
-            <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
-                <i class="fa-solid fa-bullseye"></i>
-                <span>Goals</span>
-            </a>
-            <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
-                <i class="fa-solid fa-gift"></i>
-                <span>Rewards</span>
-            </a>
-            <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
-                <i class="fa-solid fa-user"></i>
-                <span>Profile</span>
-            </a>
+          <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-house"></i><span>Dashboard</span>
+          </a>
+          <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-repeat"></i><span>Routines</span>
+          </a>
+          <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+          </a>
+          <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+          </a>
+          <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-gift"></i><span>Rewards</span>
+          </a>
+          <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-user"></i><span>Profile</span>
+          </a>
         </nav>
+      </div>
     </header>
+    <?php else: ?>
+    <header class="child-header">
+      <div class="child-header__inner">
+        <div class="child-header__titles">
+          <span class="child-header__greeting">Welcome back</span>
+          <span class="child-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'User'); ?></span>
+        </div>
+        <div class="child-header__actions">
+          <?php if (!empty($isChildNotificationUser)): ?>
+            <button type="button" class="page-header-action notification-trigger" data-child-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($notificationCount > 0): ?>
+                <span class="notification-badge"><?php echo (int) $notificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <nav class="nav-links" aria-label="Primary">
+        <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-house"></i><span>Dashboard</span>
+        </a>
+        <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-repeat"></i><span>Routines</span>
+        </a>
+        <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+        </a>
+        <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+        </a>
+        <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-gift"></i><span>Rewards</span>
+        </a>
+        <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-user"></i><span>Profile</span>
+        </a>
+      </nav>
+    </header>
+    <?php endif; ?>
     <main class="routine-layout">
         <?php if (!empty($messages)): ?>
             <div class="page-messages">
@@ -2650,6 +2840,193 @@ margin-bottom: 20px;}
                </div>
             <?php endif; ?>
         </section>
+        <?php if ($isParentContext): ?>
+        <div class="routine-layout">
+        <div class="routine-completion-section" id="routine-completion-section">
+            <h2>Routine Completion Timeline</h2>
+            <p>See when routines start and finish, task completion times, and status screen time between tasks.</p>
+            <?php if (empty($routineCompletionSessions)): ?>
+                <p class="completion-task-empty">No routine completion data yet.</p>
+            <?php else: ?>
+                <div class="routine-completion-list">
+                    <?php foreach ($routineCompletionSessions as $index => $session): ?>
+                        <?php
+                            $sessionId = (int) ($session['id'] ?? 0);
+                            $tasks = $routineCompletionTasks[$sessionId] ?? [];
+                            $startedAt = !empty($session['started_at']) ? date('m/d/Y g:i A', strtotime($session['started_at'])) : '--';
+                            $completedAt = !empty($session['completed_at']) ? date('m/d/Y g:i A', strtotime($session['completed_at'])) : '--';
+                            $completedBy = ($session['completed_by'] ?? '') === 'parent' ? 'parent' : 'child';
+                            $badgeLabel = $completedBy === 'parent' ? 'Parent Managed' : 'Child';
+                            $openAttr = $index === 0 ? ' open' : '';
+                        ?>
+                        <details class="routine-completion-card"<?php echo $openAttr; ?>>
+                            <summary>
+                                <div class="completion-summary">
+                                    <div class="completion-title"><?php echo htmlspecialchars($session['routine_title'] ?? 'Routine'); ?></div>
+                                    <div class="completion-child"><?php echo htmlspecialchars($session['child_display_name'] ?? 'Child'); ?></div>
+                                </div>
+                                <div class="completion-meta">
+                                    <span>Ended: <?php echo htmlspecialchars($completedAt); ?></span>
+                                    <span class="completion-badge <?php echo $completedBy; ?>"><?php echo $badgeLabel; ?></span>
+                                </div>
+                            </summary>
+                            <div class="completion-body">
+                                <div class="completion-times">
+                                    <span>Started: <?php echo htmlspecialchars($startedAt); ?></span>
+                                    <span>Ended: <?php echo htmlspecialchars($completedAt); ?></span>
+                                    <?php if ($completedBy === 'parent'): ?>
+                                        <span class="completion-note">Completed by parent (no timing data).</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="completion-task-list">
+                                    <?php if (empty($tasks)): ?>
+                                        <div class="completion-task-empty">No task timing data recorded.</div>
+                                    <?php else: ?>
+                                        <?php foreach ($tasks as $taskRow): ?>
+                                            <?php
+                                                $taskDoneAt = !empty($taskRow['completed_at']) ? date('g:i A', strtotime($taskRow['completed_at'])) : '--';
+                                                $statusSeconds = (int) ($taskRow['status_screen_seconds'] ?? 0);
+                                                $scheduledSeconds = $taskRow['scheduled_seconds'] ?? null;
+                                                if ($completedBy === 'parent') {
+                                                    $taskLimitMinutes = (int) ($taskRow['task_time_limit'] ?? 0);
+                                                    $scheduledSeconds = $taskLimitMinutes > 0 ? $taskLimitMinutes * 60 : null;
+                                                }
+                                                $scheduledLabel = $formatDurationOrDash($scheduledSeconds);
+                                                $actualLabel = $formatDurationOrDash($taskRow['actual_seconds'] ?? null);
+                                            ?>
+                                            <div class="completion-task-row">
+                                                <div class="completion-task-header">
+                                                    <span class="completion-task-title"><?php echo htmlspecialchars($taskRow['task_title'] ?? 'Task'); ?></span>
+                                                    <span class="completion-task-time">Task done: <?php echo htmlspecialchars($taskDoneAt); ?></span>
+                                                </div>
+                                                <div class="completion-task-meta">
+                                                    <span><strong>Scheduled:</strong> <?php echo htmlspecialchars($scheduledLabel); ?></span>
+                                                    <?php if ($completedBy === 'child'): ?>
+                                                        <span><strong>Actual:</strong> <?php echo htmlspecialchars($actualLabel); ?></span>
+                                                        <span><strong>Status screen:</strong> <?php echo $formatDuration($statusSeconds); ?></span>
+                                                    <?php endif; ?>
+                                                    <span><strong>Stars:</strong> <?php echo (int) ($taskRow['stars_awarded'] ?? 0); ?> <i class="fa-solid fa-star"></i></span>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </details>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        <div class="routine-analytics">
+            <h2>Routine Overtime Insights</h2>
+            <p>Track where routines run long so you can coach kids on timing and adjust expectations.</p>
+            <div class="overtime-grid">
+                <div class="overtime-card">
+                    <h3>Top Overtime by Child</h3>
+                    <?php $topChild = array_slice($overtimeByChild, 0, 5); ?>
+                    <?php if (!empty($topChild)): ?>
+                        <table class="overtime-table">
+                            <thead><tr><th>Child</th><th>Occurrences</th><th>Total OT (min)</th></tr></thead>
+                            <tbody>
+                                <?php foreach ($topChild as $childRow): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($childRow['child_display_name']); ?></td>
+                                        <td><?php echo (int) $childRow['occurrences']; ?></td>
+                                        <td><?php echo round(((int) $childRow['total_overtime_seconds']) / 60, 1); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php else: ?>
+                        <p class="overtime-empty">No overtime data recorded yet.</p>
+                    <?php endif; ?>
+                </div>
+                <div class="overtime-card">
+                    <h3>Routines with Most Overtime</h3>
+                    <?php $topRoutine = array_slice($overtimeByRoutine, 0, 5); ?>
+                    <?php if (!empty($topRoutine)): ?>
+                        <table class="overtime-table">
+                            <thead><tr><th>Routine</th><th>Occurrences</th><th>Total OT (min)</th></tr></thead>
+                            <tbody>
+                                <?php foreach ($topRoutine as $routineRow): ?>
+                                    <tr>
+                                        <td>
+                                            <button type="button" class="routine-log-link"
+                                                    data-routine-log-trigger
+                                                    data-routine-id="<?php echo (int) $routineRow['routine_id']; ?>"
+                                                    data-routine-title="<?php echo htmlspecialchars($routineRow['routine_title']); ?>">
+                                                <?php echo htmlspecialchars($routineRow['routine_title']); ?>
+                                            </button>
+                                        </td>
+                                        <td><?php echo (int) $routineRow['occurrences']; ?></td>
+                                        <td><?php echo round(((int) $routineRow['total_overtime_seconds']) / 60, 1); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php else: ?>
+                        <p class="overtime-empty">No recurring overtime yet. Great job!</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="overtime-card" id="overtime-section" style="margin-top: 20px;">
+                <h3>Most Recent Overtime Events</h3>
+                <?php if (!empty($overtimeLogGroups)): ?>
+                    <div class="overtime-accordion">
+                        <?php $firstDate = true; ?>
+                        <?php foreach ($overtimeLogGroups as $dateGroup): ?>
+                            <details class="overtime-date" <?php echo $firstDate ? 'open' : ''; ?>>
+                                <summary>
+                                    <span class="ot-date-label"><?php echo htmlspecialchars($dateGroup['label']); ?></span>
+                                    <span class="overtime-date-count"><?php echo (int) $dateGroup['count']; ?> event<?php echo $dateGroup['count'] === 1 ? '' : 's'; ?></span>
+                                </summary>
+                                <div class="overtime-routine-list">
+                                    <?php foreach ($dateGroup['routines'] as $routineGroup): ?>
+                                        <details class="overtime-routine" data-routine-id="<?php echo (int) ($routineGroup['entries'][0]['routine_id'] ?? 0); ?>" open>
+                                            <summary>
+                                                <span class="ot-routine-title"><?php echo htmlspecialchars($routineGroup['title']); ?></span>
+                                                <span class="overtime-routine-count"><?php echo count($routineGroup['entries']); ?> miss<?php echo count($routineGroup['entries']) === 1 ? '' : 'es'; ?></span>
+                                            </summary>
+                                            <div class="overtime-card-list">
+                                                <?php foreach ($routineGroup['entries'] as $entry): ?>
+                                                    <?php $occurTs = strtotime($entry['occurred_at']); ?>
+                                                    <div class="overtime-card-row">
+                                                        <div class="ot-row-header">
+                                                            <span class="ot-task"><?php echo htmlspecialchars($entry['task_title']); ?></span>
+                                                            <span class="ot-time"><?php echo $occurTs ? date('g:i A', $occurTs) : 'Time unavailable'; ?></span>
+                                                        </div>
+                                                        <div class="ot-meta"><strong>Child:</strong> <?php echo htmlspecialchars($entry['child_display_name']); ?></div>
+                                                        <div class="ot-meta">
+                                                            <strong>Scheduled:</strong> <?php echo $formatDuration($entry['scheduled_seconds']); ?>
+                                                            <strong>Actual:</strong> <?php echo $formatDuration($entry['actual_seconds']); ?>
+                                                        </div>
+                                                        <div class="ot-meta ot-overtime"><strong>Overtime:</strong> <?php echo $formatDuration($entry['overtime_seconds']); ?></div>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </details>
+                                    <?php endforeach; ?>
+                                </div>
+                            </details>
+                            <?php $firstDate = false; ?>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <p class="overtime-empty">No overtime events have been logged yet.</p>
+                <?php endif; ?>
+            </div>
+            <div class="routine-log-modal" id="routine-log-modal" aria-hidden="true" role="dialog" aria-modal="true">
+                <div class="routine-log-dialog">
+                    <div class="routine-log-header">
+                        <h4 class="routine-log-title" data-role="routine-log-title">Routine Overtime</h4>
+                        <button type="button" class="routine-log-close" data-role="routine-log-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="routine-log-body" data-role="routine-log-body"></div>
+                </div>
+            </div>
+        </div>
+        </div><!-- /.routine-layout -->
+        <?php endif; ?>
     </main>
     <div class="routine-modal blocked" data-routine-blocked-modal>
         <div class="routine-modal-card" role="dialog" aria-modal="true" aria-labelledby="routine-blocked-title">
@@ -2694,34 +3071,39 @@ margin-bottom: 20px;}
             </div>
         </div>
     </div>
-    <nav class="nav-mobile-bottom" aria-label="Primary">
-        <a class="nav-mobile-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
-            <i class="fa-solid fa-house"></i>
-            <span>Dashboard</span>
-        </a>
-        <a class="nav-mobile-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
-            <i class="fa-solid fa-repeat week-item-icon"></i>
-            <span>Routines</span>
-        </a>
-        <a class="nav-mobile-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
-            <i class="fa-solid fa-list-check"></i>
-            <span>Tasks</span>
-        </a>
-        <a class="nav-mobile-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
-            <i class="fa-solid fa-bullseye"></i>
-            <span>Goals</span>
-        </a>
-        <a class="nav-mobile-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
-            <i class="fa-solid fa-gift"></i>
-            <span>Rewards</span>
-        </a>
+    <nav class="bottom-nav" aria-label="Primary">
+      <a class="bottom-nav__item<?php echo $dashboardActive ? ' bottom-nav__item--active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-house"></i>
+        <span class="bottom-nav__label">Dashboard</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $routinesActive ? ' bottom-nav__item--active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-repeat"></i>
+        <span class="bottom-nav__label">Routines</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $tasksActive ? ' bottom-nav__item--active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-list-check"></i>
+        <span class="bottom-nav__label">Tasks</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $goalsActive ? ' bottom-nav__item--active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-bullseye"></i>
+        <span class="bottom-nav__label">Goals</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $rewardsActive ? ' bottom-nav__item--active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-gift"></i>
+        <span class="bottom-nav__label">Rewards</span>
+      </a>
     </nav>
     <footer>
-        <p>Child Task and Chore App - Ver 3.26.0</p>
+      <p>Child Task and Chore App - Ver 3.27.0</p>
     </footer>
     <script>
         window.RoutinePage = <?php echo json_encode($pageState, $jsonOptions); ?>;
     </script>
+    <?php if ($isParentContext): ?>
+    <script>
+        window.RoutineOvertimeByRoutine = <?php echo json_encode($overtimeLogsByRoutine, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+    </script>
+    <?php endif; ?>
     <script>
         (function() {
             const page = window.RoutinePage || {
@@ -5298,6 +5680,84 @@ margin-bottom: 20px;}
             }
         })();
     </script>
+    <?php if ($isParentContext): ?>
+    <script>
+        (function() {
+            const routineLogModal = document.getElementById('routine-log-modal');
+            const routineLogTitle = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-title"]') : null;
+            const routineLogBody = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-body"]') : null;
+            const routineLogClose = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-close"]') : null;
+            const routineLogsByRoutine = window.RoutineOvertimeByRoutine || {};
+
+            const formatDuration = (seconds) => {
+                const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+                const mins = Math.floor(safe / 60);
+                const secs = safe % 60;
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            };
+
+            const openRoutineLogModal = (routineId, routineTitle) => {
+                if (!routineLogModal || !routineLogBody || !routineLogTitle) return;
+                const key = String(routineId || routineTitle || '');
+                const group = routineLogsByRoutine[String(routineId)] || routineLogsByRoutine[key] || null;
+                const entries = group && Array.isArray(group.entries) ? group.entries : [];
+                routineLogTitle.textContent = routineTitle || (group ? group.title : 'Routine Overtime');
+                routineLogBody.innerHTML = '';
+                if (!entries.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'routine-log-empty';
+                    empty.textContent = 'No recent overtime events for this routine.';
+                    routineLogBody.appendChild(empty);
+                } else {
+                    entries.forEach(entry => {
+                        const item = document.createElement('div');
+                        item.className = 'routine-log-item';
+                        const when = entry.occurred_at ? new Date(entry.occurred_at) : null;
+                        const header = document.createElement('div');
+                        header.className = 'meta';
+                        header.textContent = when ? when.toLocaleString() : 'Date unavailable';
+                        const child = document.createElement('div');
+                        child.className = 'meta';
+                        child.textContent = `Child: ${entry.child_display_name || 'Unknown'}`;
+                        const task = document.createElement('div');
+                        task.className = 'meta';
+                        task.textContent = `Task: ${entry.task_title || 'Task'}`;
+                        const times = document.createElement('div');
+                        times.className = 'meta';
+                        times.textContent = `Scheduled: ${formatDuration(entry.scheduled_seconds)} - Actual: ${formatDuration(entry.actual_seconds)}`;
+                        const overtime = document.createElement('div');
+                        overtime.className = 'overtime';
+                        overtime.textContent = `Overtime: ${formatDuration(entry.overtime_seconds)}`;
+                        item.append(header, child, task, times, overtime);
+                        routineLogBody.appendChild(item);
+                    });
+                }
+                routineLogModal.classList.add('active');
+                routineLogModal.setAttribute('aria-hidden', 'false');
+            };
+
+            const closeRoutineLogModal = () => {
+                if (!routineLogModal) return;
+                routineLogModal.classList.remove('active');
+                routineLogModal.setAttribute('aria-hidden', 'true');
+            };
+
+            if (routineLogClose) {
+                routineLogClose.addEventListener('click', closeRoutineLogModal);
+            }
+            if (routineLogModal) {
+                routineLogModal.addEventListener('click', (event) => {
+                    if (event.target === routineLogModal) { closeRoutineLogModal(); }
+                });
+            }
+            document.querySelectorAll('[data-routine-log-trigger]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    openRoutineLogModal(btn.getAttribute('data-routine-id'), btn.getAttribute('data-routine-title'));
+                });
+            });
+        })();
+    </script>
+    <?php endif; ?>
   <script src="js/number-stepper.js" defer></script>
 <?php if (!empty($isParentNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_parent.php'; ?>

@@ -1,0 +1,1354 @@
+/* css/components.css — Reusable UI component library
+   Imported by main.css. All components use design tokens from :root.
+   Version: 3.27.0 */
+
+/* ─────────────────────────────────────────
+   1. Card — Task / Goal
+───────────────────────────────────────── */
+.card {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 12px 20px;
+}
+
+.card__strip {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  background: var(--strip-color, var(--color-primary));
+}
+
+.card__icon {
+  width: 44px; height: 44px;
+  border-radius: 22px;
+  background: var(--strip-color, var(--color-primary));
+  opacity: 0.12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--strip-color, var(--color-primary));
+}
+
+.card__icon-inner {
+  opacity: 1;
+}
+
+.card.is-complete .card__icon {
+  opacity: 0.30;
+}
+
+.card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.card__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card.is-complete .card__title {
+  opacity: 0.6;
+}
+
+.card__sub {
+  font-size: var(--text-sm);
+  color: var(--color-text-sec);
+  margin-top: 2px;
+}
+
+.card__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.card__pts-badge {
+  background: var(--color-gold-light);
+  color: var(--color-gold);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────
+   2. Status Badge
+───────────────────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.status-badge--done     { background: var(--color-success-light); color: var(--color-success-dark); }
+.status-badge--todo     { background: var(--color-primary-light);  color: var(--color-primary); }
+.status-badge--pending  { background: var(--color-warning-light);  color: var(--color-warning-dark); }
+.status-badge--overdue  { background: var(--color-danger-light);   color: var(--color-danger-dark); }
+.status-badge--approve  { background: var(--color-warning-light);  color: var(--color-warning-dark); }
+
+/* ─────────────────────────────────────────
+   3. Hero Card (Child Dashboard)
+───────────────────────────────────────── */
+.hero-card {
+  background: var(--gradient-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-hero);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  color: var(--color-white);
+  margin: 12px var(--mobile-pad);
+}
+
+.hero-card::before {
+  content: '';
+  position: absolute;
+  width: 150px; height: 150px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  top: -40px; right: -20px;
+  pointer-events: none;
+}
+
+.hero-card::after {
+  content: '';
+  position: absolute;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  bottom: -20px; left: 20px;
+  pointer-events: none;
+}
+
+.hero-card__inner {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-card__avatar {
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.hero-card__avatar img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+
+.hero-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-card__name {
+  font-size: var(--text-5xl);
+  font-weight: 700;
+  color: var(--color-white);
+  line-height: 1.2;
+}
+
+.hero-card__level-chip {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-top: 4px;
+  gap: 4px;
+}
+
+.hero-card__points-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+}
+
+.hero-card__points-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-gold);
+}
+
+.hero-card__xp-bar {
+  margin-top: 8px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.28);
+  overflow: hidden;
+}
+
+.hero-card__xp-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-white);
+  transition: width 0.4s ease;
+}
+
+.hero-card__stats {
+  display: flex;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-md);
+  margin-top: 10px;
+  padding: 8px 12px;
+  gap: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-card__stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero-card__stat + .hero-card__stat {
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.hero-card__stat-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-white);
+}
+
+.hero-card__stat-label {
+  font-size: var(--text-sm);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ─────────────────────────────────────────
+   4. Points / XP Badge
+───────────────────────────────────────── */
+.pts-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-gold-light);
+  color: var(--color-gold);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+}
+
+/* ─────────────────────────────────────────
+   5. Filter Chips
+───────────────────────────────────────── */
+.filter-chips {
+  display: flex;
+  gap: 8px;
+  padding: 8px var(--mobile-pad);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filter-chips::-webkit-scrollbar { display: none; }
+
+.filter-chip {
+  white-space: nowrap;
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-base);
+  font-weight: 400;
+  background: var(--color-white);
+  color: var(--color-text-sec);
+  box-shadow: var(--shadow-chip);
+  cursor: pointer;
+  border: none;
+  min-height: var(--touch-min);
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.filter-chip--active {
+  background: var(--color-primary);
+  color: var(--color-white);
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────
+   6. Bottom Navigation (Mobile)
+───────────────────────────────────────── */
+.bottom-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: var(--nav-height);
+  background: var(--color-white);
+  box-shadow: var(--shadow-nav);
+  display: flex;
+  z-index: var(--z-nav);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.bottom-nav__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: relative;
+  padding-top: 10px;
+  text-decoration: none;
+  color: var(--color-text-sec);
+  min-height: var(--touch-min);
+  transition: color 150ms ease;
+}
+
+.bottom-nav__item--active::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  width: 44px; height: 26px;
+  background: var(--color-primary-light);
+  border-radius: var(--radius-full);
+}
+
+.bottom-nav__item i {
+  font-size: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.bottom-nav__item--active i {
+  color: var(--color-primary);
+}
+
+.bottom-nav__label {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: inherit;
+}
+
+.bottom-nav__item--active .bottom-nav__label {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+/* ─────────────────────────────────────────
+   7. Week Strip
+───────────────────────────────────────── */
+.week-strip {
+  display: flex;
+  background: var(--color-white);
+  box-shadow: var(--shadow-header);
+  padding: 8px 10px;
+  gap: 7px;
+}
+
+.week-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 9px 0 0;
+  border-radius: 14px;
+  height: 64px;
+  cursor: default;
+}
+
+.week-day--today {
+  background: var(--color-primary);
+}
+
+.week-day__letter {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-sec);
+}
+
+.week-day--today .week-day__letter {
+  color: var(--color-white);
+  font-weight: 600;
+}
+
+.week-day__number {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.week-day--today .week-day__number {
+  color: var(--color-white);
+}
+
+.week-day__dot {
+  width: 6px; height: 6px;
+  border-radius: 3px;
+  background: var(--color-accent);
+  margin-top: auto;
+  margin-bottom: 8px;
+}
+
+.week-day--today .week-day__dot {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* ─────────────────────────────────────────
+   8. FAB — Floating Action Button
+───────────────────────────────────────── */
+.fab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  height: 48px;
+  border-radius: var(--radius-2xl);
+  background: var(--gradient-primary);
+  color: var(--color-white);
+  font-size: var(--text-md);
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  box-shadow: var(--shadow-fab);
+  text-decoration: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.fab:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.fab--fixed {
+  position: fixed;
+  bottom: calc(var(--nav-height) + 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: calc(var(--z-nav) + 10);
+}
+
+/* ─────────────────────────────────────────
+   9. Stats Strip (Gradient)
+───────────────────────────────────────── */
+.stats-strip {
+  background: var(--gradient-primary);
+  border-radius: var(--radius-lg);
+  padding: 0 16px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  box-shadow: var(--shadow-hero);
+  margin: 0 var(--mobile-pad);
+}
+
+.stats-strip__item {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  align-items: center;
+}
+
+.stats-strip__value {
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  color: var(--color-white);
+  line-height: 1.2;
+}
+
+.stats-strip__label {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.stats-strip__divider {
+  width: 1px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.3);
+  margin: 0 8px;
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────
+   10. Progress Bar
+───────────────────────────────────────── */
+.progress-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--color-bg);
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar--goal {
+  height: 7px;
+  border-radius: 4px;
+}
+
+.progress-bar__fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: inherit;
+  background: var(--fill-color, var(--color-primary));
+  min-width: 8px;
+  transition: width 0.4s ease;
+}
+
+/* ─────────────────────────────────────────
+   11. Goal Card — Child View
+───────────────────────────────────────── */
+.goal-card {
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 16px 16px 16px 24px;
+  position: relative;
+  overflow: hidden;
+  min-height: 136px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goal-card--nearly-done {
+  border: 2px solid var(--color-gold);
+  box-shadow: 0 8px 22px rgba(30, 27, 74, 0.18);
+}
+
+.goal-card__ring {
+  position: absolute;
+  right: 16px; top: 28px;
+  width: 70px; height: 70px;
+}
+
+.goal-card__ring-track {
+  fill: none;
+  stroke: var(--color-bg);
+  stroke-width: 6;
+}
+
+.goal-card__ring-fill {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 6;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 35px 35px;
+  transition: stroke-dashoffset 0.5s ease;
+}
+
+.goal-card__pct {
+  position: absolute;
+  right: 16px; top: 28px;
+  width: 70px; height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.goal-card__claim-btn {
+  background: var(--gradient-gold);
+  color: var(--color-white);
+  font-weight: 700;
+  font-size: var(--text-base);
+  padding: 0 16px;
+  height: 30px;
+  border-radius: 15px;
+  border: none;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+/* ─────────────────────────────────────────
+   12. Approval Card (Parent)
+───────────────────────────────────────── */
+.approval-card {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 16px 16px 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.approval-card__strip {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--color-warning);
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+
+.approval-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.approval-card__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-dark);
+}
+
+.approval-card__sub {
+  font-size: var(--text-sm);
+  color: var(--color-text-sec);
+  margin-top: 2px;
+}
+
+.approval-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-approve {
+  background: var(--color-success-light);
+  color: var(--color-success-dark);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  min-height: 32px;
+  transition: opacity 150ms ease;
+}
+
+.btn-approve:hover { opacity: 0.85; }
+
+.btn-reject {
+  background: var(--color-danger-light);
+  color: var(--color-danger-dark);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  min-height: 32px;
+  transition: opacity 150ms ease;
+}
+
+.btn-reject:hover { opacity: 0.85; }
+
+/* ─────────────────────────────────────────
+   13. Stat Chip (Quick Stats Row)
+───────────────────────────────────────── */
+.stat-chip {
+  background: var(--chip-bg, var(--color-primary-light));
+  border-radius: var(--radius-lg);
+  padding: 10px 16px;
+  min-width: 90px;
+  flex: 1;
+}
+
+.stat-chip__value {
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  color: var(--chip-color, var(--color-primary));
+  line-height: 1.2;
+}
+
+.stat-chip__label {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--chip-color, var(--color-primary));
+  opacity: 0.75;
+}
+
+/* ─────────────────────────────────────────
+   14. Empty State
+───────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 12px;
+  text-align: center;
+}
+
+.empty-state__icon {
+  width: 64px; height: 64px;
+  border-radius: 32px;
+  background: var(--color-primary-light);
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: var(--color-primary);
+}
+
+.empty-state__message {
+  font-size: var(--text-lg);
+  color: var(--color-text-sec);
+}
+
+.empty-state__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--gradient-primary);
+  color: var(--color-white);
+  font-size: var(--text-md);
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: var(--radius-full);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+/* ─────────────────────────────────────────
+   15. Notification Badge
+───────────────────────────────────────── */
+.badge {
+  position: absolute;
+  top: -4px; right: -4px;
+  min-width: 18px; height: 18px;
+  background: var(--color-danger);
+  color: var(--color-white);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+  z-index: 1;
+}
+
+/* ─────────────────────────────────────────
+   16. Page Header (shared across pages)
+───────────────────────────────────────── */
+.page-header {
+  height: var(--header-height);
+  background: var(--color-white);
+  box-shadow: var(--shadow-header);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 var(--mobile-pad);
+  position: sticky;
+  top: 0;
+  z-index: calc(var(--z-nav) + 50);
+}
+
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-header-greeting {
+  font-size: var(--text-base);
+  color: var(--color-text-sec);
+  display: block;
+}
+
+.page-header-title {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-header-action {
+  position: relative;
+  width: 40px; height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-slate);
+  color: var(--color-text-dark);
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  transition: background 150ms ease;
+}
+
+.page-header-action:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+/* ─────────────────────────────────────────
+   17. Section Header (shared)
+───────────────────────────────────────── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--mobile-pad);
+  margin-bottom: 8px;
+}
+
+.section-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.section-link {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+/* ─────────────────────────────────────────
+   18. Card List (spacing wrapper)
+───────────────────────────────────────── */
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  padding: 0 var(--mobile-pad);
+}
+
+/* ─────────────────────────────────────────
+   19. Gradient Hero Header (child pages)
+───────────────────────────────────────── */
+.gradient-hero-header {
+  background: var(--gradient-primary);
+  padding: 20px var(--mobile-pad) 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.gradient-hero-header::before {
+  content: '';
+  position: absolute;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  top: -60px; right: -40px;
+}
+
+.gradient-hero-header__title {
+  font-size: var(--text-5xl);
+  font-weight: 700;
+  color: var(--color-white);
+}
+
+.gradient-hero-header__sub {
+  font-size: var(--text-base);
+  color: rgba(255, 255, 255, 0.80);
+  margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────
+   20. Children Scroll Row (Parent Dashboard)
+───────────────────────────────────────── */
+.children-scroll-row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px var(--mobile-pad) 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.children-scroll-row::-webkit-scrollbar { display: none; }
+
+.child-card-mini {
+  flex-shrink: 0;
+  width: 140px;
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  cursor: pointer;
+  text-decoration: none;
+  transition: box-shadow 150ms ease;
+}
+
+.child-card-mini:hover {
+  box-shadow: var(--shadow-hero);
+}
+
+.child-card-mini__avatar {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--color-primary-light);
+}
+
+.child-card-mini__name {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--color-text-dark);
+  text-align: center;
+}
+
+.child-card-mini__level {
+  font-size: var(--text-sm);
+  color: var(--color-primary);
+  font-weight: 600;
+  background: var(--color-primary-light);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.child-card-mini__pending {
+  position: absolute;
+  top: -4px; right: -4px;
+}
+
+/* ─────────────────────────────────────────
+   21. Quick Glance Row (Parent Dashboard)
+───────────────────────────────────────── */
+.quick-glance-row {
+  display: flex;
+  gap: 10px;
+  padding: 0 var(--mobile-pad);
+}
+
+/* ─────────────────────────────────────────
+   22. Family Strip (gradient banner)
+───────────────────────────────────────── */
+.family-strip {
+  background: var(--gradient-primary);
+  border-radius: var(--radius-lg);
+  margin: 0 var(--mobile-pad);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: var(--shadow-hero);
+}
+
+.family-strip__text {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-white);
+}
+
+.family-strip__btn {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 150ms ease;
+}
+
+.family-strip__btn:hover {
+  background: var(--color-white);
+}
+
+/* ─────────────────────────────────────────
+   23. Completion Row (Recent Completions)
+───────────────────────────────────────── */
+.completion-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px var(--mobile-pad);
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-slate);
+}
+
+.completion-row__check {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--color-success-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-success-dark);
+  flex-shrink: 0;
+}
+
+.completion-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.completion-row__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.completion-row__meta {
+  font-size: var(--text-sm);
+  color: var(--color-text-sec);
+}
+
+.completion-row__pts {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-gold);
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────
+   24. Three-Dot Menu
+───────────────────────────────────────── */
+.three-dot-menu {
+  position: relative;
+}
+
+.three-dot-btn {
+  width: 32px; height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-sec);
+  font-size: 14px;
+  transition: background 150ms ease;
+}
+
+.three-dot-btn:hover {
+  background: var(--color-slate);
+}
+
+.three-dot-dropdown {
+  position: absolute;
+  right: 0; top: 36px;
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  min-width: 140px;
+  z-index: calc(var(--z-modal) - 100);
+  overflow: hidden;
+  display: none;
+}
+
+.three-dot-dropdown.is-open {
+  display: block;
+}
+
+.three-dot-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: var(--text-base);
+  color: var(--color-text-dark);
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  transition: background 150ms ease;
+}
+
+.three-dot-dropdown__item:hover {
+  background: var(--color-slate);
+}
+
+.three-dot-dropdown__item--danger {
+  color: var(--color-danger-dark);
+}
+
+/* ─────────────────────────────────────────
+   25. Bonus Card (Child Tasks)
+───────────────────────────────────────── */
+.bonus-card {
+  background: var(--gradient-teal);
+  border-radius: var(--radius-lg);
+  margin: 0 var(--mobile-pad);
+  padding: 16px;
+  color: var(--color-white);
+}
+
+.bonus-card__title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.bonus-card__sub {
+  font-size: var(--text-base);
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────
+   26. Sidebar (Desktop, Parent)
+───────────────────────────────────────── */
+.sidebar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    width: var(--sidebar-width);
+    min-height: 100vh;
+    background: var(--color-white);
+    box-shadow: 2px 0 8px rgba(30, 27, 74, 0.06);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: var(--z-sidebar);
+    flex-shrink: 0;
+  }
+}
+
+.sidebar__logo {
+  background: var(--gradient-primary);
+  height: 80px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+
+.sidebar__logo-text {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-white);
+}
+
+.sidebar__nav {
+  flex: 1;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar__nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-sec);
+  font-size: var(--text-base);
+  font-weight: 400;
+  text-decoration: none;
+  transition: background 150ms ease, color 150ms ease;
+  position: relative;
+}
+
+.sidebar__nav-item:hover {
+  background: var(--color-slate);
+  color: var(--color-text-dark);
+}
+
+.sidebar__nav-item--active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.sidebar__nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 4px;
+  background: var(--color-primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.sidebar__nav-item i {
+  width: 20px;
+  text-align: center;
+  font-size: 15px;
+}
+
+.sidebar__user-card {
+  margin: 8px;
+  background: var(--color-slate);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.sidebar__user-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.sidebar__user-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-dark);
+}
+
+.sidebar__user-role {
+  font-size: var(--text-sm);
+  color: var(--color-text-sec);
+}
+
+/* ─────────────────────────────────────────
+   27. Desktop Stat Card Row
+───────────────────────────────────────── */
+.desktop-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  padding: 0 var(--content-pad);
+  margin-bottom: var(--section-gap);
+}
+
+.desktop-stat-card {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+}
+
+.desktop-stat-card__value {
+  font-size: var(--text-hero);
+  font-weight: 700;
+  color: var(--chip-color, var(--color-text-dark));
+  line-height: 1;
+}
+
+.desktop-stat-card__label {
+  font-size: var(--text-base);
+  color: var(--color-text-sec);
+  margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────
+   28. Weekly Bar Chart Strip
+───────────────────────────────────────── */
+.weekly-chart {
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 16px var(--content-pad);
+  margin: 0 var(--content-pad);
+}
+
+.weekly-chart__header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.weekly-chart__title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.weekly-chart__meta {
+  font-size: var(--text-base);
+  color: var(--color-text-sec);
+}
+
+.weekly-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 60px;
+}
+
+.weekly-chart__bar-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.weekly-chart__bar-track {
+  flex: 1;
+  width: 100%;
+  background: var(--color-primary-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+
+.weekly-chart__bar-fill {
+  width: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-sm);
+  transition: height 0.4s ease;
+}
+
+.weekly-chart__bar-fill--today {
+  background: var(--color-gold);
+}
+
+.weekly-chart__day {
+  font-size: var(--text-sm);
+  color: var(--color-text-sec);
+}
