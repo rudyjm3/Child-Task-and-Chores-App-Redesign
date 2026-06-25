@@ -1,0 +1,296 @@
+/* css/parent.css — Parent-specific styles
+   Include in parent-facing pages: dashboard_parent.php, task.php (parent), goal.php (parent)
+   Version: 3.27.0 */
+
+/* ─────────────────────────────────────────
+   1. Parent Page Layout
+───────────────────────────────────────── */
+.parent-layout {
+  min-height: 100vh;
+  padding-bottom: calc(var(--nav-height) + 16px);
+}
+
+.parent-layout__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+  padding-top: 16px;
+  padding-bottom: 24px;
+}
+
+/* ─────────────────────────────────────────
+   2. Parent Header
+───────────────────────────────────────── */
+.parent-header {
+  background: var(--color-white);
+  box-shadow: var(--shadow-header);
+  position: sticky;
+  top: 0;
+  z-index: calc(var(--z-nav) + 50);
+}
+
+.parent-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--mobile-pad);
+  height: var(--header-height);
+  gap: 12px;
+}
+
+.parent-header__titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.parent-header__greeting {
+  font-size: var(--text-base);
+  color: var(--color-text-sec);
+  display: block;
+}
+
+.parent-header__name {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.parent-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Desktop top bar (visible at 1024px+) */
+.parent-header__search {
+  display: none;
+}
+
+/* Desktop nav (in header, visible at 768px–1023px) */
+.parent-header__nav {
+  display: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--color-white);
+  border-top: 1px solid var(--color-slate);
+}
+
+.parent-header__nav::-webkit-scrollbar { display: none; }
+
+/* ─────────────────────────────────────────
+   3. Parent Nav Links (Horizontal — Tablet+)
+───────────────────────────────────────── */
+.nav-links {
+  display: none;
+  gap: 4px;
+  padding: 8px var(--mobile-pad);
+  align-items: center;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-weight: 400;
+  color: var(--color-text-sec);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 150ms ease, color 150ms ease;
+  min-height: var(--touch-min);
+}
+
+.nav-link:hover {
+  background: var(--color-slate);
+  color: var(--color-text-dark);
+}
+
+.nav-link.is-active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────
+   4. Parent Section Spacing
+───────────────────────────────────────── */
+.parent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.parent-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--mobile-pad);
+}
+
+.parent-section__title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.parent-section__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-white);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  padding: 0 5px;
+  margin-left: 6px;
+}
+
+/* ─────────────────────────────────────────
+   5. Parent Task/Goal Card extras
+───────────────────────────────────────── */
+.child-name-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  margin-bottom: 4px;
+}
+
+/* ─────────────────────────────────────────
+   6. Goal Card — Parent Variant
+───────────────────────────────────────── */
+.goal-card--parent {
+  min-height: 110px;
+  padding-right: 90px;
+}
+
+.goal-card--parent .goal-card__pct-label {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--text-hero);
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* ─────────────────────────────────────────
+   7. Tablet Layout (768px–1023px)
+───────────────────────────────────────── */
+@media (min-width: 768px) {
+  .bottom-nav {
+    display: none;
+  }
+
+  .parent-header__nav {
+    display: block;
+  }
+
+  .nav-links {
+    display: flex;
+  }
+
+  .parent-layout {
+    padding-bottom: 24px;
+  }
+
+  .parent-layout__content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--section-gap);
+    padding: 24px var(--mobile-pad);
+  }
+
+  .parent-layout__full-width {
+    grid-column: 1 / -1;
+  }
+
+  .desktop-stat-cards {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 0 var(--mobile-pad);
+  }
+
+  .children-scroll-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .card-list {
+    padding: 0;
+  }
+}
+
+/* ─────────────────────────────────────────
+   8. Desktop Layout (1024px+)
+───────────────────────────────────────── */
+@media (min-width: 1024px) {
+  .parent-page {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  .parent-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .parent-header__search {
+    display: flex;
+  }
+
+  .parent-header__top {
+    padding: 0 var(--content-pad);
+  }
+
+  .parent-layout__content {
+    padding: var(--content-pad);
+    gap: 20px;
+  }
+
+  .desktop-stat-cards {
+    grid-template-columns: repeat(4, 1fr);
+    padding: 0;
+  }
+
+  .card-list {
+    padding: 0;
+  }
+
+  .parent-section__header {
+    padding: 0;
+  }
+
+  .stats-strip {
+    margin: 0;
+  }
+
+  .filter-chips {
+    padding: 8px 0;
+  }
+
+  .fab--fixed {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    transform: none;
+  }
+
+  /* Two-column lower section */
+  .parent-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+}

@@ -3,9 +3,14 @@
 // Purpose: Edit profile details based on role (child: avatar/password; parent: family)
 // Version: 3.26.0
 
-session_start();
 require_once __DIR__ . '/includes/functions.php';
-require_once __DIR__ . '/includes/page_setup.php';
+
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
+$currentPage = basename($_SERVER['PHP_SELF']);
 
 // Prevent any client/proxy caching so the profile view always reflects the current request context
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -13,7 +18,21 @@ header('Pragma: no-cache');
 
 $role = $_SESSION['role'];
 $current_user_id = $_SESSION['user_id'];
+// Resolve precise role type for permission checks
 $current_role_type = getEffectiveRole($current_user_id);
+
+// Determine the family root (main account owner) for relationship checks
+$family_root_id = $current_user_id;
+if ($current_role_type !== 'main_parent') {
+    $stmt = $db->prepare("SELECT main_parent_id FROM family_links WHERE linked_user_id = :uid LIMIT 1");
+    $stmt->execute([':uid' => $current_user_id]);
+    $root = $stmt->fetchColumn();
+    if ($root) {
+        $family_root_id = $root;
+    }
+}
+
+require_once __DIR__ . '/includes/notifications_bootstrap.php';
 
 // Work out requested profile target
 $requested_user_id = null;
@@ -24,14 +43,14 @@ if (isset($_GET['self'])) {
     $requested_context = ($current_role_type === 'child') ? 'child' : 'adult';
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $requested_user_id = filter_input(INPUT_POST, 'edit_user_id', FILTER_VALIDATE_INT, ['flags' => FILTER_NULL_ON_FAILURE]);
-    $requested_context = trim((string)($_POST['edit_type'] ?? ''));
+    $requested_context = filter_input(INPUT_POST, 'edit_type', FILTER_SANITIZE_STRING);
 } else {
     if (isset($_GET['type'], $_GET['user_id']) && $_GET['type'] === 'child') {
         $requested_user_id = filter_input(INPUT_GET, 'user_id', FILTER_VALIDATE_INT);
         $requested_context = 'child';
     } elseif (isset($_GET['edit_user'])) {
         $requested_user_id = filter_input(INPUT_GET, 'edit_user', FILTER_VALIDATE_INT);
-        $requested_context = trim((string)($_GET['role_type'] ?? ''));
+        $requested_context = filter_input(INPUT_GET, 'role_type', FILTER_SANITIZE_STRING);
     }
 }
 
@@ -98,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($user_id != $_SESSION['user_id'] && !in_array($current_role_type, ['main_parent', 'secondary_parent'])) {
             $message = "Access denied.";
         } else {
-            $new_password = trim((string)($_POST['new_password'] ?? ''));
+            $new_password = filter_input(INPUT_POST, 'new_password', FILTER_SANITIZE_STRING);
             if (updateUserPassword($user_id, $new_password)) {
                 $message = "Password updated successfully!";
                 if ($user_id != $_SESSION['user_id']) {
@@ -123,11 +142,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($user_id != $_SESSION['user_id'] && !in_array($current_role_type, ['main_parent', 'secondary_parent'])) {
             $message = "Access denied.";
         } else {
-            $first_name = trim((string)($_POST['first_name'] ?? ''));
-            $last_name = trim((string)($_POST['last_name'] ?? ''));
-            $birthday = trim((string)($_POST['birthday'] ?? ''));
-            $avatar = trim((string)($_POST['avatar'] ?? ''));
-            $child_gender = trim((string)($_POST['child_gender'] ?? ''));
+            $first_name = filter_input(INPUT_POST, 'first_name', FILTER_SANITIZE_STRING);
+            $last_name = filter_input(INPUT_POST, 'last_name', FILTER_SANITIZE_STRING);
+            $birthday = filter_input(INPUT_POST, 'birthday', FILTER_SANITIZE_STRING);
+            $avatar = filter_input(INPUT_POST, 'avatar', FILTER_SANITIZE_STRING);
+            $child_gender = filter_input(INPUT_POST, 'child_gender', FILTER_SANITIZE_STRING);
             $allowed_genders = ['male', 'female', 'nonbinary', 'prefer_not_to_say'];
             if (!in_array($child_gender, $allowed_genders, true)) {
                 $child_gender = null;
@@ -137,15 +156,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($_FILES['avatar_upload']) && $_FILES['avatar_upload']['error'] == 0) {
                 $file_size = $_FILES['avatar_upload']['size'];
                 $file_type = strtolower(pathinfo($_FILES['avatar_upload']['name'], PATHINFO_EXTENSION));
-                if ($file_size > 3 * 1024 * 1024 || !in_array($file_type, ['jpg', 'jpeg', 'png'])) {
-                    $message = "Upload failed: File too large (>3MB) or invalid type (JPG/PNG only).";
+                if ($file_size > 3 * 1024 * 1024 || !in_array($file_type, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+                    $message = "Upload failed: File too large (>3MB) or invalid type (JPG, PNG, GIF, WEBP only).";
                 } else {
                     $upload_dir = __DIR__ . '/uploads/avatars/';
                     if (!is_dir($upload_dir)) {
                         mkdir($upload_dir, 0755, true);
                     }
-                    $file_ext = strtolower(pathinfo($_FILES['avatar_upload']['name'], PATHINFO_EXTENSION));
-                    $file_name = uniqid() . '_' . pathinfo($_FILES['avatar_upload']['name'], PATHINFO_FILENAME) . '.' . $file_ext;
+                    $file_name = uniqid() . '_' . pathinfo($_FILES['avatar_upload']['name'], PATHINFO_FILENAME) . '.' . $file_type;
                     $upload_path = 'uploads/avatars/' . $file_name;
                     if (move_uploaded_file($_FILES['avatar_upload']['tmp_name'], __DIR__ . '/' . $upload_path)) {
                         // Resize image (GD library)
@@ -179,19 +197,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($user_id != $_SESSION['user_id'] && !in_array($current_role_type, ['main_parent', 'secondary_parent'])) {
             $message = "Access denied.";
         } else {
-            $first_name = trim((string)($_POST['first_name'] ?? ''));
-            $last_name = trim((string)($_POST['last_name'] ?? ''));
-            $role_badge_label = trim((string)($_POST['role_badge_label'] ?? ''));
+            $first_name = filter_input(INPUT_POST, 'first_name', FILTER_SANITIZE_STRING);
+            $last_name = filter_input(INPUT_POST, 'last_name', FILTER_SANITIZE_STRING);
+            $role_badge_label = filter_input(INPUT_POST, 'role_badge_label', FILTER_SANITIZE_STRING);
             $use_role_badge_label = !empty($_POST['use_role_badge_label']) ? 1 : 0;
             $target_effective_role_for_update = getEffectiveRole($user_id);
 
             if (in_array($target_effective_role_for_update, ['main_parent', 'secondary_parent'], true)) {
-                $gender = trim((string)($_POST['gender'] ?? ''));
+                $gender = filter_input(INPUT_POST, 'gender', FILTER_SANITIZE_STRING);
                 if (!in_array($gender, ['male', 'female'], true)) {
                     $gender = null;
                 }
                 $allowed_parent_titles = ['mother', 'father'];
-                $parent_title = trim((string)($_POST['parent_title'] ?? ''));
+                $parent_title = filter_input(INPUT_POST, 'parent_title', FILTER_SANITIZE_STRING);
                 if (!in_array($parent_title, $allowed_parent_titles, true)) {
                     $parent_title = null;
                 }
@@ -307,12 +325,24 @@ $child_display_name = $profile['child_name'] ?? $display_name;
 $bodyClasses = [];
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     $bodyClasses[] = 'child-theme';
+    $bodyClasses[] = 'role-child';
+} else {
+    $bodyClasses[] = 'role-parent';
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<?php $pageTitle = 'Profile - Child Task and Chore App'; include __DIR__ . '/includes/html_head.php'; ?>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Child Task and Chore App</title>
+    <link rel="stylesheet" href="css/main.css?v=3.27.0">
+    <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
+    <link rel="stylesheet" href="css/child.css?v=3.27.0">
+    <?php else: ?>
+    <link rel="stylesheet" href="css/parent.css?v=3.27.0">
+    <?php endif; ?>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         .profile { padding: 20px; max-width: 600px; margin: 0 auto; text-align: center; }
         .profile-form { background: #f5f5f5; padding: 20px; border-radius: 8px; }
@@ -323,11 +353,11 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
         .profile-form textarea { padding: 10px; }
         .profile-form button { margin-top: 6px; }
         .avatar-preview { width: 100px; height: 100px; border-radius: 50%; margin: 10px; }
-        /* .button → css/shared.css */
+        .button { padding: 10px 20px; background-color: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer; }
         .avatar-options { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 15px;}
         .avatar-option { width: 60px; height: 60px; border-radius: 50%; cursor: pointer; border: 2px solid #ddd; }
         .avatar-option.selected { border-color: #4caf50; }
-        /* .role-badge {
+        .role-badge {
             background: #4caf50;
             color: #fff;
             padding: 2px 8px;
@@ -335,7 +365,7 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
             font-size: 0.9em;
             margin-left: 8px;
             display: inline-block;
-        } */
+        }
         .child-profile { 
             background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
             border-radius: 10px;
@@ -367,7 +397,7 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
             font-weight: 500;
             margin: 15px 0;
         }
-        /* page-header, nav-links, nav-mobile-bottom → css/shared.css */
+        .nav-link-button { background: transparent; border: none; cursor: pointer; }
         .help-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 1200; padding: 16px; }
         .help-modal.open { display: flex; }
         .help-card { background: #fff; border-radius: 12px; max-width: 720px; width: min(720px, 100%); max-height: 85vh; overflow: hidden; box-shadow: 0 12px 30px rgba(0,0,0,0.18); display: grid; grid-template-rows: auto 1fr; }
@@ -381,7 +411,6 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
             .avatar-options { gap: 5px; }
             .avatar-option { width: 50px; height: 50px; }
             .profile-form { padding: 15px; }
-            /* nav responsive rules → css/shared.css */
         }
         .section-divider { border-top: 1px solid #e0e0e0; margin: 18px 0 10px; padding-top: 14px; }
     </style>
@@ -415,7 +444,106 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     </script>
 </head>
 <body<?php echo !empty($bodyClasses) ? ' class="' . implode(' ', $bodyClasses) . '"' : ''; ?>>
-    <?php $pageHeading = 'Profile'; include __DIR__ . '/includes/page_header.php'; ?>
+    <?php
+        $dashboardPage = 'dashboard_' . $role . '.php';
+        $dashboardActive = $currentPage === $dashboardPage;
+        $routinesActive = $currentPage === 'routine.php';
+        $tasksActive = $currentPage === 'task.php';
+        $goalsActive = $currentPage === 'goal.php';
+        $rewardsActive = $currentPage === 'rewards.php';
+        $profileActive = $currentPage === 'profile.php';
+        $isParentContext = canCreateContent($_SESSION['user_id']);
+    ?>
+    <?php if ($isParentContext): ?>
+    <header class="parent-header">
+      <div class="parent-header__top">
+        <div class="parent-header__titles">
+          <span class="parent-header__greeting">Welcome back</span>
+          <span class="parent-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'User'); ?></span>
+        </div>
+        <div class="parent-header__actions">
+          <?php if (!empty($isParentNotificationUser)): ?>
+            <button type="button" class="page-header-action parent-notification-trigger" data-parent-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($parentNotificationCount > 0): ?>
+                <span class="parent-notification-badge"><?php echo (int) $parentNotificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+            <a class="page-header-action" href="dashboard_parent.php#manage-family" aria-label="Family settings">
+              <i class="fa-solid fa-gear"></i>
+            </a>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <div class="parent-header__nav">
+        <nav class="nav-links" aria-label="Primary">
+          <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-house"></i><span>Dashboard</span>
+          </a>
+          <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-repeat"></i><span>Routines</span>
+          </a>
+          <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+          </a>
+          <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+          </a>
+          <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-gift"></i><span>Rewards</span>
+          </a>
+          <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-user"></i><span>Profile</span>
+          </a>
+        </nav>
+      </div>
+    </header>
+    <?php else: ?>
+    <header class="child-header">
+      <div class="child-header__inner">
+        <div class="child-header__titles">
+          <span class="child-header__greeting">Welcome back</span>
+          <span class="child-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'User'); ?></span>
+        </div>
+        <div class="child-header__actions">
+          <?php if (!empty($isChildNotificationUser)): ?>
+            <button type="button" class="page-header-action notification-trigger" data-child-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($notificationCount > 0): ?>
+                <span class="notification-badge"><?php echo (int) $notificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <nav class="nav-links" aria-label="Primary">
+        <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-house"></i><span>Dashboard</span>
+        </a>
+        <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-repeat"></i><span>Routines</span>
+        </a>
+        <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+        </a>
+        <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+        </a>
+        <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-gift"></i><span>Rewards</span>
+        </a>
+        <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-user"></i><span>Profile</span>
+        </a>
+      </nav>
+    </header>
+    <?php endif; ?>
     <div class="profile">
         <?php if (isset($message)) echo "<p>$message</p>"; ?>
         <?php if ($role === 'child' || $edit_type === 'child'): ?>
@@ -627,7 +755,28 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
             </div>
         </div>
     </div>
-    <?php include __DIR__ . '/includes/page_footer.php'; ?>
+    <nav class="bottom-nav" aria-label="Primary">
+      <a class="bottom-nav__item<?php echo $dashboardActive ? ' bottom-nav__item--active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-house"></i>
+        <span class="bottom-nav__label">Dashboard</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $routinesActive ? ' bottom-nav__item--active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-repeat"></i>
+        <span class="bottom-nav__label">Routines</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $tasksActive ? ' bottom-nav__item--active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-list-check"></i>
+        <span class="bottom-nav__label">Tasks</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $goalsActive ? ' bottom-nav__item--active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-bullseye"></i>
+        <span class="bottom-nav__label">Goals</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $rewardsActive ? ' bottom-nav__item--active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-gift"></i>
+        <span class="bottom-nav__label">Rewards</span>
+      </a>
+    </nav>
   <script src="js/number-stepper.js" defer></script>
   <script>
       document.addEventListener('DOMContentLoaded', () => {
@@ -663,6 +812,7 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
 <?php endif; ?>
 </body>
 </html>
+
 
 
 

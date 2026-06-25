@@ -3,11 +3,136 @@
 // Provides parent routine builder with validation, timer warnings for children, and overtime tracking.
 
 session_start();
-require_once __DIR__ . '/includes/functions.php';
-require_once __DIR__ . '/includes/page_setup.php';
 
+require_once __DIR__ . '/includes/functions.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
+$currentPage = basename($_SERVER['PHP_SELF']);
+
+if (!isset($_SESSION['name'])) {
+    $_SESSION['name'] = getDisplayName($_SESSION['user_id']);
+}
+
+$family_root_id = getFamilyRootId($_SESSION['user_id']);
 $isParentContext = canCreateContent($_SESSION['user_id']);
+
+// Routine Completion Timeline & Overtime Insights (parent view only)
+$routine_overtime_logs = [];
+$routine_overtime_stats = [];
+$overtimeByChild = [];
+$overtimeByRoutine = [];
+$overtimeLogGroups = [];
+$overtimeLogsByRoutine = [];
+$routineCompletionSessions = [];
+$routineCompletionTasks = [];
+$formatDuration = static function($seconds) {
+    $seconds = max(0, (int) $seconds);
+    $minutes = intdiv($seconds, 60);
+    $remaining = $seconds % 60;
+    return sprintf('%02d:%02d', $minutes, $remaining);
+};
+$formatDurationOrDash = static function($seconds) use ($formatDuration) {
+    if ($seconds === null) { return '--:--'; }
+    $seconds = (int) $seconds;
+    if ($seconds <= 0) { return '--:--'; }
+    return $formatDuration($seconds);
+};
+if ($isParentContext) {
+    $routine_overtime_logs = getRoutineOvertimeLogs($family_root_id, 25);
+    $routine_overtime_stats = getRoutineOvertimeStats($family_root_id);
+    $overtimeByChild = $routine_overtime_stats['by_child'] ?? [];
+    $overtimeByRoutine = $routine_overtime_stats['by_routine'] ?? [];
+    if (!empty($routine_overtime_logs) && is_array($routine_overtime_logs)) {
+        foreach ($routine_overtime_logs as $log) {
+            $timestamp = strtotime($log['occurred_at']);
+            $dateKey = $timestamp ? date('Y-m-d', $timestamp) : 'unknown';
+            $dateLabel = $timestamp ? date('l, M j, Y', $timestamp) : 'Unknown date';
+            if (!isset($overtimeLogGroups[$dateKey])) {
+                $overtimeLogGroups[$dateKey] = ['label' => $dateLabel, 'count' => 0, 'routines' => []];
+            }
+            $routineId = (int) ($log['routine_id'] ?? 0);
+            $routineKey = $routineId ?: md5($log['routine_title'] ?? 'Routine');
+            if (!isset($overtimeLogGroups[$dateKey]['routines'][$routineKey])) {
+                $overtimeLogGroups[$dateKey]['routines'][$routineKey] = ['title' => $log['routine_title'] ?? 'Routine', 'entries' => []];
+            }
+            $overtimeLogGroups[$dateKey]['routines'][$routineKey]['entries'][] = $log;
+            $overtimeLogGroups[$dateKey]['count']++;
+            if (!isset($overtimeLogsByRoutine[$routineKey])) {
+                $overtimeLogsByRoutine[$routineKey] = ['title' => $log['routine_title'] ?? 'Routine', 'entries' => []];
+            }
+            $overtimeLogsByRoutine[$routineKey]['entries'][] = $log;
+        }
+    }
+    try {
+        ensureRoutineCompletionTables();
+        $completionStmt = $db->prepare("
+            SELECT
+                rcl.id,
+                rcl.routine_id,
+                rcl.child_user_id,
+                rcl.completed_by,
+                rcl.started_at,
+                rcl.completed_at,
+                r.title AS routine_title,
+                COALESCE(
+                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                    NULLIF(u.name, ''),
+                    u.username,
+                    'Unknown'
+                ) AS child_display_name
+            FROM routine_completion_logs rcl
+            JOIN routines r ON rcl.routine_id = r.id
+            LEFT JOIN users u ON rcl.child_user_id = u.id
+            WHERE rcl.parent_user_id = :parent_id
+            ORDER BY rcl.completed_at DESC
+            LIMIT 15
+        ");
+        $completionStmt->execute([':parent_id' => $family_root_id]);
+        $routineCompletionSessions = $completionStmt->fetchAll(PDO::FETCH_ASSOC);
+        $sessionIds = array_values(array_filter(array_map(static function ($row) {
+            return (int) ($row['id'] ?? 0);
+        }, $routineCompletionSessions)));
+        if (!empty($sessionIds)) {
+            $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
+            $taskStmt = $db->prepare("
+                SELECT
+                    rct.completion_log_id,
+                    rct.routine_task_id,
+                    rct.sequence_order,
+                    rct.completed_at,
+                    rct.status_screen_seconds,
+                    rct.scheduled_seconds,
+                    rct.actual_seconds,
+                    rct.stars_awarded,
+                    rt.title AS task_title,
+                    rt.time_limit AS task_time_limit
+                FROM routine_completion_tasks rct
+                LEFT JOIN routine_tasks rt ON rct.routine_task_id = rt.id
+                WHERE rct.completion_log_id IN ($placeholders)
+                ORDER BY rct.completion_log_id DESC, rct.sequence_order ASC, rct.id ASC
+            ");
+            $taskStmt->execute($sessionIds);
+            foreach ($taskStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $logId = (int) ($row['completion_log_id'] ?? 0);
+                if ($logId) {
+                    if (!isset($routineCompletionTasks[$logId])) {
+                        $routineCompletionTasks[$logId] = [];
+                    }
+                    $routineCompletionTasks[$logId][] = $row;
+                }
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Failed to load routine completion logs: " . $e->getMessage());
+    }
+}
+
 $routinePreferences = getRoutinePreferences($family_root_id);
+
+require_once __DIR__ . '/includes/notifications_bootstrap.php';
 
 $messages = [];
 $createRoutineState = ['tasks' => []];
@@ -15,7 +140,6 @@ $editRoutineStates = [];
 $createFormHasErrors = false;
 $editFormErrors = [];
 $editFieldOverrides = [];
-$parentGrantBonusCheckedByRoutine = [];
 
 function routineChildBelongsToFamily(int $child_user_id, int $family_root_id): bool {
     global $db;
@@ -492,12 +616,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             updateChildLevelState($childId, $parentIdForLog, true);
         }
 
-        $totalTaskStars = 0;
-        foreach ($completionTasks as $taskCompletion) {
-            $totalTaskStars += max(0, (int) ($taskCompletion['stars_awarded'] ?? 0));
-        }
-        $routineStarsAwarded = (int) floor($totalTaskStars / 4);
-
         if (!empty($routine['parent_user_id'])) {
             $parentIdForNote = (int) $routine['parent_user_id'];
             $endTsLocal = time();
@@ -507,15 +625,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ? "Bonus {$bonusAwarded} unlocked"
                 : "Bonus {$bonusAwarded}/{$bonusPossible}. Bonus Criteria Not Met";
             $message = sprintf(
-                '%s completed %s. Points %d/%d. %s. Overtime tasks: %d. Total earned: %d. Stars awarded: %d.',
+                '%s completed %s. Points %d/%d. %s. Overtime tasks: %d. Total earned: %d.',
                 substr((string) $childName, 0, 30),
                 substr((string) ($routine['title'] ?? 'Routine'), 0, 40),
                 $taskPointsAwarded,
                 $maxRoutinePoints,
                 $bonusNote,
                 max($overtimeCountInput, $overtimeCount),
-                $totalEarned,
-                $routineStarsAwarded
+                $totalEarned
             );
             $link = 'dashboard_parent.php?overtime_routine=' . $routineId . '#overtime';
             addParentNotification($parentIdForNote, 'routine_completed', $message, $link);
@@ -528,7 +645,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'bonus_possible' => $bonusPossible,
             'bonus_eligible' => $grantBonus,
             'new_total_points' => $newTotal,
-            'routine_stars_awarded' => $routineStarsAwarded,
             'task_results' => $awards,
             'all_within_limits' => $allWithinLimits
         ]);
@@ -545,7 +661,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $childIds = [(int) $duplicateChildId];
             }
         }
-        $title = trim((string) trim((string)($_POST['title'] ?? '')));
+        $title = trim((string) filter_input(INPUT_POST, 'title', FILTER_SANITIZE_STRING));
         $childIds = array_values(array_filter(array_map('intval', $_POST['child_user_ids'] ?? [])));
         if (empty($childIds)) {
             $child_id = filter_input(INPUT_POST, 'child_user_id', FILTER_VALIDATE_INT);
@@ -553,13 +669,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $childIds = [(int) $child_id];
             }
         }
-        $start_time = trim((string)($_POST['start_time'] ?? ''));
-        $end_time = trim((string)($_POST['end_time'] ?? ''));
-        $recurrence = trim((string)($_POST['recurrence'] ?? ''));
+        $start_time = filter_input(INPUT_POST, 'start_time', FILTER_SANITIZE_STRING);
+        $end_time = filter_input(INPUT_POST, 'end_time', FILTER_SANITIZE_STRING);
+        $recurrence = filter_input(INPUT_POST, 'recurrence', FILTER_SANITIZE_STRING);
         $bonus_points = filter_input(INPUT_POST, 'bonus_points', FILTER_VALIDATE_INT);
-        $time_of_day_input = trim((string)($_POST['time_of_day'] ?? ''));
+        $time_of_day_input = filter_input(INPUT_POST, 'time_of_day', FILTER_SANITIZE_STRING);
         $time_of_day = in_array($time_of_day_input, ['anytime', 'morning', 'afternoon', 'evening'], true) ? $time_of_day_input : 'anytime';
-        $routine_date = trim((string)($_POST['routine_date'] ?? ''));
+        $routine_date = filter_input(INPUT_POST, 'routine_date', FILTER_SANITIZE_STRING);
         $recurrence_days = null;
         $structureRaw = $_POST['routine_structure'] ?? '';
 
@@ -627,7 +743,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($isParentContext && isset($_POST['update_routine'])) {
         $routine_id = filter_input(INPUT_POST, 'routine_id', FILTER_VALIDATE_INT);
-        $title = trim((string) trim((string)($_POST['title'] ?? '')));
+        $title = trim((string) filter_input(INPUT_POST, 'title', FILTER_SANITIZE_STRING));
         $childIds = array_values(array_filter(array_map('intval', $_POST['child_user_ids'] ?? [])));
         if (empty($childIds)) {
             $child_id = filter_input(INPUT_POST, 'child_user_id', FILTER_VALIDATE_INT);
@@ -635,13 +751,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $childIds = [(int) $child_id];
             }
         }
-        $start_time = trim((string)($_POST['start_time'] ?? ''));
-        $end_time = trim((string)($_POST['end_time'] ?? ''));
-        $recurrence = trim((string)($_POST['recurrence'] ?? ''));
+        $start_time = filter_input(INPUT_POST, 'start_time', FILTER_SANITIZE_STRING);
+        $end_time = filter_input(INPUT_POST, 'end_time', FILTER_SANITIZE_STRING);
+        $recurrence = filter_input(INPUT_POST, 'recurrence', FILTER_SANITIZE_STRING);
         $bonus_points = filter_input(INPUT_POST, 'bonus_points', FILTER_VALIDATE_INT);
-        $time_of_day_input = trim((string)($_POST['time_of_day'] ?? ''));
+        $time_of_day_input = filter_input(INPUT_POST, 'time_of_day', FILTER_SANITIZE_STRING);
         $time_of_day = in_array($time_of_day_input, ['anytime', 'morning', 'afternoon', 'evening'], true) ? $time_of_day_input : 'anytime';
-        $routine_date = trim((string)($_POST['routine_date'] ?? ''));
+        $routine_date = filter_input(INPUT_POST, 'routine_date', FILTER_SANITIZE_STRING);
         $recurrence_days = null;
         $structureRaw = $_POST['routine_structure'] ?? '';
 
@@ -756,11 +872,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messages[] = ['type' => 'error', 'text' => 'Unable to delete routine.'];
         }
     } elseif ($isParentContext && isset($_POST['create_routine_task'])) {
-        $title = trim((string) trim((string)($_POST['rt_title'] ?? '')));
-        $description = trim((string) trim((string)($_POST['rt_description'] ?? '')));
+        $title = trim((string) filter_input(INPUT_POST, 'rt_title', FILTER_SANITIZE_STRING));
+        $description = trim((string) filter_input(INPUT_POST, 'rt_description', FILTER_SANITIZE_STRING));
         $time_limit = filter_input(INPUT_POST, 'rt_time_limit', FILTER_VALIDATE_INT);
         $point_value = filter_input(INPUT_POST, 'rt_point_value', FILTER_VALIDATE_INT);
-        $category = trim((string)($_POST['rt_category'] ?? ''));
+        $category = filter_input(INPUT_POST, 'rt_category', FILTER_SANITIZE_STRING);
         $min_minutes_input = filter_input(INPUT_POST, 'rt_min_time', FILTER_SANITIZE_NUMBER_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
 
         $time_limit = ($time_limit !== false && $time_limit > 0) ? $time_limit : null;
@@ -787,11 +903,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($isParentContext && isset($_POST['update_routine_task'])) {
         $routine_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
-        $title = trim((string) trim((string)($_POST['edit_rt_title'] ?? '')));
-        $description = trim((string) trim((string)($_POST['edit_rt_description'] ?? '')));
+        $title = trim((string) filter_input(INPUT_POST, 'edit_rt_title', FILTER_SANITIZE_STRING));
+        $description = trim((string) filter_input(INPUT_POST, 'edit_rt_description', FILTER_SANITIZE_STRING));
         $time_limit = filter_input(INPUT_POST, 'edit_rt_time_limit', FILTER_VALIDATE_INT);
         $point_value = filter_input(INPUT_POST, 'edit_rt_point_value', FILTER_VALIDATE_INT);
-        $category = trim((string)($_POST['edit_rt_category'] ?? ''));
+        $category = filter_input(INPUT_POST, 'edit_rt_category', FILTER_SANITIZE_STRING);
 
         if (!isset($routine_tasks) || !is_array($routine_tasks)) {
             $routine_tasks = getRoutineTasks($family_root_id);
@@ -895,10 +1011,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $routine_id = filter_input(INPUT_POST, 'routine_id', FILTER_VALIDATE_INT);
         $completedRaw = $_POST['parent_completed'] ?? [];
         $completedAtRaw = $_POST['parent_completed_at'] ?? '';
-        $parentGrantBonus = !empty($_POST['parent_grant_bonus']);
-        if ($routine_id) {
-            $parentGrantBonusCheckedByRoutine[(int) $routine_id] = $parentGrantBonus;
-        }
         $selected = [];
         if (is_array($completedRaw)) {
             foreach ($completedRaw as $value) {
@@ -918,42 +1030,151 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-        if ($routine_id) {
-            $messages[] = completeRoutineAsParent($routine_id, $selected, $completedAtMap, $parentGrantBonus, $family_root_id);
-        } else {
+        if (!$routine_id || !routineBelongsToParent($routine_id, $family_root_id)) {
             $messages[] = ['type' => 'error', 'text' => 'Unable to complete routine for this child.'];
+        } else {
+            $routineData = getRoutineWithTasks($routine_id);
+            if (!$routineData) {
+                $messages[] = ['type' => 'error', 'text' => 'Routine could not be loaded.'];
+            } else {
+                $childId = (int) ($routineData['child_user_id'] ?? 0);
+                $todayDate = date('Y-m-d');
+                $alreadyCompleted = false;
+                if ($childId > 0) {
+                    ensureRoutinePointsLogsTable();
+                    $logStmt = $db->prepare("SELECT created_at FROM routine_points_logs WHERE routine_id = :routine_id AND child_user_id = :child_id AND DATE(created_at) = :today ORDER BY created_at DESC LIMIT 1");
+                    $logStmt->execute([
+                        ':routine_id' => $routine_id,
+                        ':child_id' => $childId,
+                        ':today' => $todayDate
+                    ]);
+                    $lastCompletion = $logStmt->fetchColumn();
+                    if ($lastCompletion) {
+                        $formatted = date('m/d/Y h:i A', strtotime($lastCompletion));
+                        $messages[] = ['type' => 'error', 'text' => 'Routine already completed today at ' . $formatted . '.'];
+                        $alreadyCompleted = true;
+                    }
+                }
+                if ($alreadyCompleted) {
+                    // Skip updates if already completed today.
+                } else {
+                $tasks = $routineData['tasks'] ?? [];
+                $pendingBefore = 0;
+                $taskMap = [];
+                $completedTodayMap = [];
+                foreach ($tasks as $task) {
+                    $taskId = (int) $task['id'];
+                    $taskMap[$taskId] = $task;
+                    $completedToday = false;
+                    $completedAt = $task['completed_at'] ?? null;
+                    if (!empty($completedAt) && ($task['status'] ?? 'pending') === 'completed') {
+                        $completedDate = date('Y-m-d', strtotime($completedAt));
+                        $completedToday = ($completedDate === $todayDate);
+                    }
+                    $completedTodayMap[$taskId] = $completedToday;
+                    if (!$completedToday) {
+                        $pendingBefore++;
+                    }
+                }
+                $selected = array_values(array_unique(array_filter($selected, function ($id) use ($taskMap) {
+                    return isset($taskMap[$id]);
+                })));
+
+                $awardedPoints = 0;
+                $completionTimestampMap = [];
+                foreach ($tasks as $task) {
+                    $taskId = (int) $task['id'];
+                    $isSelected = in_array($taskId, $selected, true);
+                    $status = $isSelected ? 'completed' : 'pending';
+                    $completedAtValue = null;
+                    if ($isSelected) {
+                        if (!empty($completedTodayMap[$taskId]) && !empty($taskMap[$taskId]['completed_at'])) {
+                            $completedAtValue = $taskMap[$taskId]['completed_at'];
+                        } elseif (!empty($completedAtMap[$taskId])) {
+                            $completedAtValue = date('Y-m-d H:i:s', (int) floor($completedAtMap[$taskId] / 1000));
+                        } else {
+                            $completedAtValue = date('Y-m-d H:i:s');
+                        }
+                        $completionTimestampMap[$taskId] = $completedAtValue;
+                    }
+                    setRoutineTaskStatus($routine_id, $taskId, $status, $completedAtValue);
+                    if ($isSelected && empty($completedTodayMap[$taskId])) {
+                        $awardedPoints += max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0));
+                    }
+                }
+
+                if ($awardedPoints > 0 && $childId > 0) {
+                    updateChildPoints($childId, $awardedPoints);
+                }
+                $awardCount = count($selected);
+                $allSelected = !empty($tasks) && $awardCount === count($tasks);
+                $grantBonus = $pendingBefore > 0 && $allSelected;
+                $bonusAwarded = 0;
+                if ($childId > 0) {
+                    $bonusAwarded = completeRoutine($routine_id, $childId, $grantBonus);
+                }
+                $shouldLogCompletion = $childId > 0 && $allSelected && $pendingBefore > 0;
+                if ($childId > 0 && ($awardedPoints > 0 || $bonusAwarded > 0 || $shouldLogCompletion)) {
+                    logRoutinePointsAward($routine_id, $childId, $awardedPoints, $bonusAwarded);
+                }
+                if ($shouldLogCompletion) {
+                    $parentIdForLog = (int) ($routineData['parent_user_id'] ?? 0);
+                    if ($parentIdForLog > 0) {
+                        $parentStartedAt = null;
+                        $parentCompletedAt = null;
+                        if (!empty($completionTimestampMap)) {
+                            $timestampValues = [];
+                            foreach ($completionTimestampMap as $stamp) {
+                                $parsed = strtotime($stamp);
+                                if ($parsed !== false) {
+                                    $timestampValues[] = $parsed;
+                                }
+                            }
+                            if (!empty($timestampValues)) {
+                                $parentStartedAt = date('Y-m-d H:i:s', min($timestampValues));
+                                $parentCompletedAt = date('Y-m-d H:i:s', max($timestampValues));
+                            }
+                        }
+                        $completionTasks = [];
+                        foreach ($tasks as $task) {
+                            $taskId = (int) ($task['id'] ?? 0);
+                            $completionTasks[] = [
+                                'routine_task_id' => $taskId,
+                                'sequence_order' => (int) ($task['sequence_order'] ?? 0),
+                                'completed_at' => $completionTimestampMap[$taskId] ?? null,
+                                'scheduled_seconds' => null,
+                                'actual_seconds' => null,
+                                'status_screen_seconds' => 0,
+                                'stars_awarded' => 3
+                            ];
+                        }
+                        logRoutineCompletionSession($routine_id, $childId, $parentIdForLog, 'parent', $parentStartedAt, $parentCompletedAt, $completionTasks);
+                        updateChildLevelState($childId, $parentIdForLog, true);
+                    }
+                }
+                $summaryParts = [];
+                if ($awardedPoints > 0) {
+                    $summaryParts[] = "{$awardedPoints} routine points applied";
+                }
+                if ($grantBonus && $bonusAwarded > 0) {
+                    $summaryParts[] = "{$bonusAwarded} bonus points added";
+                } elseif ($grantBonus && $bonusAwarded === 0 && (int) ($routineData['bonus_points'] ?? 0) > 0) {
+                    $summaryParts[] = 'Bonus points not available outside the routine window';
+                } elseif (!$grantBonus && (int) ($routineData['bonus_points'] ?? 0) > 0) {
+                    $summaryParts[] = 'Bonus points withheld (not all tasks checked)';
+                }
+                if (empty($summaryParts)) {
+                    $summaryParts[] = 'No points were awarded';
+                }
+                $messages[] = ['type' => 'success', 'text' => 'Routine updated manually: ' . implode('. ', $summaryParts) . '.'];
+                }
+            }
         }
     }
 }
 
 $routine_tasks = $isParentContext ? getRoutineTasks($family_root_id) : [];
 $routines = getRoutines($_SESSION['user_id']);
-$routineBonusGrantedTodayById = [];
-if ($isParentContext) {
-    ensureRoutinePointsLogsTable();
-    $todayDate = date('Y-m-d');
-    $routineIds = array_values(array_filter(array_map(static function ($row) {
-        return (int) ($row['id'] ?? 0);
-    }, $routines)));
-    if (!empty($routineIds)) {
-        $placeholders = implode(',', array_fill(0, count($routineIds), '?'));
-        $bonusStmt = $db->prepare("
-            SELECT routine_id, MAX(CASE WHEN bonus_points > 0 THEN 1 ELSE 0 END) AS bonus_granted
-            FROM routine_points_logs
-            WHERE DATE(created_at) = ?
-              AND routine_id IN ($placeholders)
-            GROUP BY routine_id
-        ");
-        $params = array_merge([$todayDate], $routineIds);
-        $bonusStmt->execute($params);
-        foreach ($bonusStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $routineId = (int) ($row['routine_id'] ?? 0);
-            if ($routineId > 0) {
-                $routineBonusGrantedTodayById[$routineId] = ((int) ($row['bonus_granted'] ?? 0)) > 0;
-            }
-        }
-    }
-}
 $routineCompletionMap = [];
 if (getEffectiveRole($_SESSION['user_id']) === 'child') {
     ensureRoutinePointsLogsTable();
@@ -1037,175 +1258,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_routine'])) {
 }
 }
 
-$createBuilderInitial = $createRoutineState['tasks'];
-$routineCompletionSessions = [];
-$routineCompletionTasks = [];
-$overtimeByChild = [];
-$overtimeByRoutine = [];
-$overtimeLogGroups = [];
-$formatDuration = static function ($seconds) {
-    $seconds = max(0, (int) $seconds);
-    $minutes = intdiv($seconds, 60);
-    $remaining = $seconds % 60;
-    return sprintf('%02d:%02d', $minutes, $remaining);
-};
-$formatDurationOrDash = static function ($seconds) use ($formatDuration) {
-    if ($seconds === null) {
-        return '--:--';
-    }
-    $seconds = (int) $seconds;
-    if ($seconds <= 0) {
-        return '--:--';
-    }
-    return $formatDuration($seconds);
-};
-$formatMinutesLabel = static function ($totalMinutes) {
-    $totalMinutes = max(0, (int) $totalMinutes);
-    if ($totalMinutes <= 0) {
-        return '0m';
-    }
-    $hours = intdiv($totalMinutes, 60);
-    $minutes = $totalMinutes % 60;
-    if ($hours > 0 && $minutes > 0) {
-        return sprintf('%dh %dm', $hours, $minutes);
-    }
-    if ($hours > 0) {
-        return sprintf('%dh', $hours);
-    }
-    return sprintf('%dm', $minutes);
-};
-$calculateRoutineWindowMinutes = static function ($startTime, $endTime) {
-    if (empty($startTime) || empty($endTime)) {
-        return null;
-    }
-    $start = DateTimeImmutable::createFromFormat('H:i:s', $startTime);
-    $end = DateTimeImmutable::createFromFormat('H:i:s', $endTime);
-    if (!$start || !$end) {
-        return null;
-    }
-    if ($end <= $start) {
-        $end = $end->modify('+1 day');
-    }
-    $seconds = $end->getTimestamp() - $start->getTimestamp();
-    return (int) round($seconds / 60);
-};
-if ($isParentContext) {
-    $routine_overtime_logs = getRoutineOvertimeLogs($family_root_id, 25);
-    $routine_overtime_stats = getRoutineOvertimeStats($family_root_id);
-    $overtimeByChild = $routine_overtime_stats['by_child'] ?? [];
-    $overtimeByRoutine = $routine_overtime_stats['by_routine'] ?? [];
-    if (!empty($routine_overtime_logs) && is_array($routine_overtime_logs)) {
-        foreach ($routine_overtime_logs as $log) {
-            $timestamp = strtotime($log['occurred_at']);
-            $dateKey = $timestamp ? date('Y-m-d', $timestamp) : 'unknown';
-            $dateLabel = $timestamp ? date('l, M j, Y', $timestamp) : 'Unknown date';
-            if (!isset($overtimeLogGroups[$dateKey])) {
-                $overtimeLogGroups[$dateKey] = [
-                    'label' => $dateLabel,
-                    'count' => 0,
-                    'routines' => []
-                ];
-            }
-            $routineId = (int) ($log['routine_id'] ?? 0);
-            $routineKey = $routineId ?: md5($log['routine_title'] ?? 'Routine');
-            if (!isset($overtimeLogGroups[$dateKey]['routines'][$routineKey])) {
-                $overtimeLogGroups[$dateKey]['routines'][$routineKey] = [
-                    'title' => $log['routine_title'] ?? 'Routine',
-                    'entries' => []
-                ];
-            }
-            $overtimeLogGroups[$dateKey]['routines'][$routineKey]['entries'][] = $log;
-            $overtimeLogGroups[$dateKey]['count']++;
-        }
-    }
-    try {
-        ensureRoutineCompletionTables();
-        $completionStmt = $db->prepare("
-            SELECT
-                rcl.id,
-                rcl.routine_id,
-                rcl.child_user_id,
-                rcl.completed_by,
-                rcl.started_at,
-                rcl.completed_at,
-                r.title AS routine_title,
-                r.start_time AS routine_start_time,
-                r.end_time AS routine_end_time,
-                COALESCE(r.bonus_points, 0) AS routine_bonus_points_worth,
-                (
-                    SELECT COALESCE(SUM(COALESCE(rt2.point_value, 0)), 0)
-                    FROM routines_routine_tasks rrt2
-                    LEFT JOIN routine_tasks rt2 ON rrt2.routine_task_id = rt2.id
-                    WHERE rrt2.routine_id = r.id
-                ) AS routine_task_points_worth,
-                (
-                    SELECT rpl.task_points
-                    FROM routine_points_logs rpl
-                    WHERE rpl.routine_id = rcl.routine_id
-                        AND rpl.child_user_id = rcl.child_user_id
-                    ORDER BY ABS(TIMESTAMPDIFF(SECOND, rpl.created_at, rcl.completed_at)) ASC
-                    LIMIT 1
-                ) AS awarded_task_points,
-                (
-                    SELECT rpl.bonus_points
-                    FROM routine_points_logs rpl
-                    WHERE rpl.routine_id = rcl.routine_id
-                        AND rpl.child_user_id = rcl.child_user_id
-                    ORDER BY ABS(TIMESTAMPDIFF(SECOND, rpl.created_at, rcl.completed_at)) ASC
-                    LIMIT 1
-                ) AS awarded_bonus_points,
-                COALESCE(
-                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
-                    NULLIF(u.name, ''),
-                    u.username,
-                    'Unknown'
-                ) AS child_display_name
-            FROM routine_completion_logs rcl
-            JOIN routines r ON rcl.routine_id = r.id
-            LEFT JOIN users u ON rcl.child_user_id = u.id
-            WHERE rcl.parent_user_id = :parent_id
-            ORDER BY rcl.completed_at DESC
-            LIMIT 15
-        ");
-        $completionStmt->execute([':parent_id' => $family_root_id]);
-        $routineCompletionSessions = $completionStmt->fetchAll(PDO::FETCH_ASSOC);
-        $sessionIds = array_values(array_filter(array_map(static function ($row) {
-            return (int) ($row['id'] ?? 0);
-        }, $routineCompletionSessions)));
-        if (!empty($sessionIds)) {
-            $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
-            $taskStmt = $db->prepare("
-                SELECT
-                    rct.completion_log_id,
-                    rct.routine_task_id,
-                    rct.sequence_order,
-                    rct.completed_at,
-                    rct.status_screen_seconds,
-                    rct.scheduled_seconds,
-                    rct.actual_seconds,
-                    rct.stars_awarded,
-                    rt.title AS task_title,
-                    rt.time_limit AS task_time_limit
-                FROM routine_completion_tasks rct
-                LEFT JOIN routine_tasks rt ON rct.routine_task_id = rt.id
-                WHERE rct.completion_log_id IN ($placeholders)
-                ORDER BY rct.completion_log_id DESC, rct.sequence_order ASC, rct.id ASC
-            ");
-            $taskStmt->execute($sessionIds);
-            foreach ($taskStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $logId = (int) ($row['completion_log_id'] ?? 0);
-                if ($logId) {
-                    if (!isset($routineCompletionTasks[$logId])) {
-                        $routineCompletionTasks[$logId] = [];
-                    }
-                    $routineCompletionTasks[$logId][] = $row;
-                }
-            }
-        }
-    } catch (Exception $e) {
-        error_log("Failed to load routine completion logs on routine.php: " . $e->getMessage());
+$welcome_role_label = getUserRoleLabel($_SESSION['user_id']);
+if (!$welcome_role_label) {
+    $fallback_role = getEffectiveRole($_SESSION['user_id']) ?: ($_SESSION['role'] ?? null);
+    if ($fallback_role) {
+        $welcome_role_label = ucfirst(str_replace('_', ' ', $fallback_role));
     }
 }
+
+$createBuilderInitial = $createRoutineState['tasks'];
 $editBuilderInitial = [];
 foreach ($routines as $routine) {
     $rid = (int) $routine['id'];
@@ -1254,19 +1315,31 @@ $pageState = [
 $bodyClasses = [];
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     $bodyClasses[] = 'child-theme';
+    $bodyClasses[] = 'role-child';
+} else {
+    $bodyClasses[] = 'role-parent';
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<?php $pageTitle = 'Routine Management'; include __DIR__ . '/includes/html_head.php'; ?>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Routine Management</title>
+    <link rel="stylesheet" href="css/main.css?v=3.27.0">
+    <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
+    <link rel="stylesheet" href="css/child.css?v=3.27.0">
+    <?php else: ?>
+    <link rel="stylesheet" href="css/parent.css?v=3.27.0">
+    <?php endif; ?>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         .page-messages { max-width: 960px; margin: 0 auto 20px; }
         .page-alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; font-weight: 600; }
         .page-alert.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
         .page-alert.error { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
         .page-alert.info { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; }
-        /* .role-badge { margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #4caf50; color: #fff; font-size: 0.82rem; } */
+        .role-badge { margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #4caf50; color: #fff; font-size: 0.82rem; }
         .routine-layout { max-width: 1080px; margin: 0 auto; padding: 0 16px 40px; }
         .routine-section { background: #fff; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 24px; }
         /* .routine-section-header { background: linear-gradient(135deg, #333333ff, #5e6164ff); padding: 16px 20px; margin: -20px -20px 16px; border-radius: 10px 10px 0px 0px; color: #f5f7fa; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.18); } */
@@ -1311,58 +1384,8 @@ margin-bottom: 20px;}
         .routine-card.is-hidden { display: none; }
         @media (max-width: 768px) {
             .routine-card-grid { grid-template-columns: 1fr; }
-            .routine-layout { padding-left: 0; padding-right: 0; padding-bottom: 0; }
-            .routine-section { padding: 10px; }
         }
         .routine-section h2 { margin-top: 0; font-size: 1.5rem; }
-        .routine-completion-section { margin-top: 20px; background: #ffffff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-        .routine-completion-section h2 { margin-top: 0; }
-        .routine-completion-list { display: grid; gap: 12px; margin-top: 12px; }
-        .routine-completion-card { border: 1px solid #e3e7eb; border-radius: 10px; overflow: hidden; background: #fff; }
-        .routine-completion-card > summary { padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px; list-style: none; background: #f5f8fb; }
-        .routine-completion-card > summary::-webkit-details-marker { display: none; }
-        .completion-summary { display: grid; gap: 4px; }
-        .completion-title { font-weight: 700; color: #203040; }
-        .completion-child { color: #4a6278; font-size: 0.9rem; }
-        .completion-meta { display: grid; gap: 6px; text-align: right; font-size: 0.88rem; color: #37506a; }
-        .completion-badge { display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.02em; text-transform: uppercase; }
-        .completion-badge.child { background: rgba(76, 175, 80, 0.15); color: #2e7d32; }
-        .completion-badge.parent { background: rgba(25, 118, 210, 0.15); color: #1565c0; }
-        .completion-quick-stats { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: flex-end; }
-        .completion-body { padding: 14px 16px; display: grid; gap: 12px; }
-        .completion-times { display: flex; flex-wrap: wrap; gap: 12px 20px; color: #4a6278; font-size: 0.9rem; }
-        .completion-note { color: #1565c0; font-weight: 600; }
-        .completion-task-list { display: grid; gap: 10px; }
-        .completion-task-row { border: 1px solid #e3e7eb; border-radius: 8px; padding: 10px 12px; background: #fcfdff; display: grid; gap: 6px; }
-        .completion-task-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
-        .completion-task-title { font-weight: 700; color: #203040; }
-        .completion-task-time { color: #4a6278; font-size: 0.85rem; }
-        .completion-task-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #37506a; font-size: 0.85rem; }
-        .completion-task-empty { margin: 0; color: #607284; font-style: italic; }
-        .routine-analytics { margin-top: 20px; background: #fafafa; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-        .routine-analytics h2 { margin-top: 0; }
-        .overtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
-        .overtime-card { background: #ffffff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
-        .overtime-card h3 { margin-top: 0; font-size: 1.05em; }
-        .overtime-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-        .overtime-table th, .overtime-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eceff3; font-size: 0.9rem; }
-        .overtime-empty { margin: 8px 0 0; color: #607284; font-style: italic; }
-        .routine-log-link { background: none; border: none; color: #1565c0; cursor: pointer; padding: 0; font-weight: 700; text-decoration: underline; }
-        .routine-log-link:hover { color: #0d47a1; }
-        .overtime-accordion { display: grid; gap: 12px; margin-top: 12px; }
-        .overtime-date { border: 1px solid #dbe4ee; border-radius: 10px; background: #fff; overflow: hidden; }
-        .overtime-date > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; font-weight: 700; color: #1f3a56; background: #f5f8fb; }
-        .overtime-date > summary::-webkit-details-marker { display: none; }
-        .overtime-date-count { font-size: 0.85rem; color: #4a6278; font-weight: 600; }
-        .overtime-routine { border-top: 1px solid #e6edf5; }
-        .overtime-routine > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-weight: 600; color: #274869; }
-        .overtime-routine > summary::-webkit-details-marker { display: none; }
-        .overtime-card-list { display: grid; gap: 10px; padding: 0 14px 14px; }
-        .overtime-card-row { background: linear-gradient(145deg, #ffffff, #f7f9fb); border: 1px solid #e3e7eb; border-radius: 10px; padding: 12px; display: grid; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-        .ot-row-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-        .ot-task { font-weight: 700; color: #1f3a56; }
-        .ot-time { color: #4a6278; font-size: 0.85rem; }
-        .ot-meta { color: #37506a; font-size: 0.88rem; }
         .form-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         .child-select-group { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; }
@@ -1408,10 +1431,9 @@ margin-bottom: 20px;}
             .library-card-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         }
         .library-task-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-        .library-task-card header { display: flex; align-items: center; justify-content: space-between; padding: 12px 0px !important; gap: 12px; }
+        .library-task-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .library-task-card h4 { margin: 0; font-size: 1.1rem; }
-        /* .library-task-points { background-color: #4caf50; color: #fff; padding: 2px 8px; border-radius: 50px; font-size: 0.7rem; font-weight: 700; white-space: nowrap; } */
-        .library-task-points {background: #fffbeb; color: #f59e0b; padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;}
+        .library-task-points { background-color: #4caf50; color: #fff; padding: 2px 8px; border-radius: 50px; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
         .child-theme .library-task-points { background: #fffbeb; color: #f59e0b; padding: 4px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
         .child-theme .library-task-points::before { content: '\f51e'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
         .points-badge { background: #fffbeb; color: #f59e0b; padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -1472,7 +1494,7 @@ margin-bottom: 20px;}
         .timer-warning { color: #c62828; font-weight: 600; margin-top: 6px; }
         .sub-timer-label { font-size: 0.80rem; font-weight: 600; color: #ef6c00; margin-top: 0px; }
         .warning-active .timer-widget { border-color: #e53935; box-shadow: 0 0 12px rgba(229,57,53,0.25); }
-
+        .library-table-wrap { margin-top: 12px; }
         .no-data { font-style: italic; color: #757575; }
         footer { text-align: center; padding: 24px 0; color: #607d8b; }
         .routine-task-edit { margin-top: 8px; }
@@ -1488,7 +1510,6 @@ margin-bottom: 20px;}
         .task-list li { display: flex; align-items: flex-start; gap: 12px; }
         .task-checkbox { display: inline-flex; align-items: center; margin-top: 4px; }
         .task-checkbox input { width: 18px; height: 18px; }
-        .parent-bonus-toggle { gap: 12px; }
         .parent-complete-form { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
         .parent-complete-form .button { align-self: flex-start; }
         .parent-complete-note { font-size: 0.85rem; color: #546e7a; margin: 0; }
@@ -1682,7 +1703,12 @@ margin-bottom: 20px;}
         .library-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
         .library-filters { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; color: #37474f; }
         .library-filters select { border: 1px solid #c5cae9; border-radius: 10px; padding: 8px 12px; font-size: 0.9rem; }
-        .library-table-wrap { padding: 0 12px 12px; }
+        .library-collapse { border: 1px solid rgba(13, 71, 161, 0.1); border-radius: 12px; padding: 0 0 6px; background: rgba(236, 245, 255, 0.55); }
+        .library-toggle { cursor: pointer; font-weight: 700; padding: 12px 16px; position: relative; display: flex; align-items: center; gap: 10px; color: #1565c0; }
+        .library-toggle::after { content: '\25BC'; font-size: 0.95rem; transition: transform 200ms ease; }
+        .library-collapse[open] .library-toggle::after { transform: rotate(180deg); }
+        .library-table-wrap { overflow: hidden; max-height: 0; opacity: 0; transform: translateY(-6px); transition: max-height 260ms ease, opacity 220ms ease, transform 220ms ease; padding: 0 12px; }
+        .library-collapse[open] .library-table-wrap { max-height: 2000px; opacity: 1; transform: translateY(0); padding: 0 12px 12px; overflow: auto; }
         .library-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
         .library-table thead th { text-align: left; padding: 10px 8px; background: rgba(21,101,192,0.15); color: #0d47a1; font-weight: 700; }
         .library-table tbody tr { border-bottom: 1px solid rgba(96,125,139,0.18); transition: background 140ms ease; }
@@ -1727,7 +1753,7 @@ margin-bottom: 20px;}
             .status-summary { font-size: 1rem; }
             .summary-footer strong { font-size: 1.3rem; }
         }
-        /* page-header, nav-links, nav-mobile-bottom → css/shared.css */
+        .nav-link-button { background: transparent; border: none; cursor: pointer; }
         .routine-action-bar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 10px 0 18px; }
         .routine-create-button { width: 52px; height: 52px; border-radius: 50%; border: none; background: #ff9800; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 1.4rem; cursor: pointer; box-shadow: 0 6px 14px rgba(255, 152, 0, 0.35); }
         .routine-create-button:hover { background: #fb8c00; }
@@ -1737,7 +1763,7 @@ margin-bottom: 20px;}
         .routine-library-button:hover { color: #7a7a7a; }
         .routine-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 4200; padding: 14px; }
         .routine-modal.open { display: flex; }
-        /* body.modal-open → css/shared.css */
+        body.modal-open { overflow: hidden; }
         .routine-modal-card { background: #fff; border-radius: 14px; max-width: 920px; width: min(920px, 100%); max-height: 90vh; overflow: hidden; box-shadow: 0 12px 32px rgba(0,0,0,0.25); display: grid; grid-template-rows: auto 1fr; }
         .routine-modal-card header { display: flex; align-items: center; justify-content: space-between; flex-direction: row;font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e0e0e0; }
         .routine-modal-card h2 { margin: 0; font-size: 1.1rem; }
@@ -1757,11 +1783,179 @@ margin-bottom: 20px;}
         .help-body { padding: 12px 16px 16px; overflow-y: auto; display: grid; gap: 12px; }
         .help-section h3 { margin: 0 0 6px; font-size: 1rem; color: #37474f; }
         .help-section ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: #455a64; }
+        /* ── Routine Completion Timeline ── */
+        .routine-completion-section { margin-top: 20px; background: #ffffff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+        .routine-completion-section h2 { margin-top: 0; }
+        .routine-completion-list { display: grid; gap: 12px; margin-top: 12px; }
+        .routine-completion-card { border: 1px solid #e3e7eb; border-radius: 10px; overflow: hidden; background: #fff; }
+        .routine-completion-card > summary { padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px; list-style: none; background: #f5f8fb; }
+        .routine-completion-card > summary::-webkit-details-marker { display: none; }
+        .completion-summary { display: grid; gap: 4px; }
+        .completion-title { font-weight: 700; color: #0d47a1; }
+        .completion-child { color: #455a64; font-size: 0.9rem; }
+        .completion-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #546e7a; font-size: 0.9rem; }
+        .completion-badge { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+        .completion-badge.child { background: #e3f2fd; color: #0d47a1; }
+        .completion-badge.parent { background: #ffe0b2; color: #bf360c; }
+        .completion-body { padding: 12px 16px; display: grid; gap: 12px; }
+        .completion-times { display: grid; gap: 6px; color: #37474f; }
+        .completion-note { color: #bf360c; font-weight: 600; }
+        .completion-task-list { display: grid; gap: 8px; }
+        .completion-task-row { display: grid; gap: 6px; padding: 10px; border: 1px solid #e9edf2; border-radius: 8px; background: #f9fbfd; }
+        .completion-task-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .completion-task-title { font-weight: 600; color: #263238; }
+        .completion-task-meta { font-size: 0.9rem; color: #37474f; display: flex; gap: 10px; flex-wrap: wrap; }
+        .completion-task-meta strong { color: #455a64; }
+        .completion-task-empty { color: #666; font-style: italic; }
+        /* ── Routine Overtime Insights ── */
+        .routine-analytics { margin-top: 20px; background: #fafafa; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+        .routine-analytics h2 { margin-top: 0; }
+        .overtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+        .overtime-card { background: #ffffff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+        .overtime-card h3 { margin-top: 0; font-size: 1.05em; }
+        .overtime-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.95em; }
+        .overtime-table th, .overtime-table td { border: 1px solid #e0e0e0; padding: 8px; text-align: left; }
+        .overtime-table th { background: #f0f4f8; font-weight: 600; }
+        .overtime-empty { font-style: italic; color: #666; margin-top: 12px; }
+        .routine-log-link { background: none; border: none; color: #1565c0; cursor: pointer; padding: 0; font-weight: 700; text-decoration: underline; }
+        .routine-log-link:hover { color: #0d47a1; }
+        .overtime-accordion { display: grid; gap: 12px; margin-top: 12px; }
+        .overtime-date { border: 1px solid #e3e7eb; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .overtime-date > summary { padding: 12px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; background: #f5f8fb; list-style: none; }
+        .overtime-date > summary::-webkit-details-marker { display: none; }
+        .overtime-date-count { color: #607d8b; font-weight: 600; font-size: 0.92rem; }
+        .overtime-routine { border-top: 1px solid #eef1f4; }
+        .overtime-routine > summary { padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; color: #0d47a1; list-style: none; }
+        .overtime-routine > summary::-webkit-details-marker { display: none; }
+        .overtime-routine-count { color: #455a64; font-size: 0.9rem; font-weight: 600; }
+        .overtime-card-list { display: grid; gap: 10px; padding: 0 14px 14px; }
+        .overtime-card-row { background: linear-gradient(145deg, #ffffff, #f7f9fb); border: 1px solid #e3e7eb; border-radius: 10px; padding: 12px; display: grid; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .ot-row-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .ot-task { font-weight: 700; color: #0d47a1; }
+        .ot-time { color: #546e7a; font-size: 0.9rem; }
+        .ot-meta { font-size: 0.92rem; color: #37474f; display: flex; gap: 10px; flex-wrap: wrap; }
+        .ot-meta strong { color: #455a64; }
+        .ot-overtime { color: #c62828; font-weight: 700; }
+        /* ── Routine Log Modal ── */
+        .routine-log-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 16px; }
+        .routine-log-modal.active { display: flex; }
+        .routine-log-dialog { background: #fff; border-radius: 12px; max-width: 640px; width: min(640px, 100%); max-height: 80vh; overflow: hidden; box-shadow: 0 18px 36px rgba(0,0,0,0.25); display: grid; grid-template-rows: auto 1fr; }
+        .routine-log-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #e0e0e0; }
+        .routine-log-title { margin: 0; font-size: 1.1rem; font-weight: 700; color: #0d47a1; }
+        .routine-log-close { border: none; background: transparent; font-size: 1.3rem; cursor: pointer; color: #455a64; }
+        .routine-log-body { padding: 14px 16px; overflow-y: auto; display: grid; gap: 10px; }
+        .routine-log-empty { color: #666; font-style: italic; }
+        .routine-log-item { border: 1px solid #e3e7eb; border-radius: 10px; padding: 10px; display: grid; gap: 6px; background: #f9fbfd; }
+        .routine-log-item .meta { color: #546e7a; font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 10px; }
+        .routine-log-item .overtime { color: #c62828; font-weight: 700; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body<?php echo !empty($bodyClasses) ? ' class="' . implode(' ', $bodyClasses) . '"' : ''; ?>>
-    <?php $pageHeading = 'Routine Management'; include __DIR__ . '/includes/page_header.php'; ?>
+    <?php
+        $dashboardPage = $isParentContext ? 'dashboard_parent.php' : 'dashboard_child.php';
+        $dashboardActive = $currentPage === $dashboardPage;
+        $routinesActive = $currentPage === 'routine.php';
+        $tasksActive = $currentPage === 'task.php';
+        $goalsActive = $currentPage === 'goal.php';
+        $rewardsActive = $currentPage === 'rewards.php';
+        $profileActive = $currentPage === 'profile.php';
+    ?>
+    <?php if ($isParentContext): ?>
+    <header class="parent-header">
+      <div class="parent-header__top">
+        <div class="parent-header__titles">
+          <span class="parent-header__greeting">Welcome back</span>
+          <span class="parent-header__name">
+            <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'User'); ?>
+            <?php if ($welcome_role_label): ?>
+              <span class="role-badge"><?php echo htmlspecialchars($welcome_role_label); ?></span>
+            <?php endif; ?>
+          </span>
+        </div>
+        <div class="parent-header__actions">
+          <?php if (!empty($isParentNotificationUser)): ?>
+            <button type="button" class="page-header-action parent-notification-trigger" data-parent-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($parentNotificationCount > 0): ?>
+                <span class="parent-notification-badge"><?php echo (int) $parentNotificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+            <a class="page-header-action" href="dashboard_parent.php#manage-family" aria-label="Family settings">
+              <i class="fa-solid fa-gear"></i>
+            </a>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <div class="parent-header__nav">
+        <nav class="nav-links" aria-label="Primary">
+          <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-house"></i><span>Dashboard</span>
+          </a>
+          <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-repeat"></i><span>Routines</span>
+          </a>
+          <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+          </a>
+          <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+          </a>
+          <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-gift"></i><span>Rewards</span>
+          </a>
+          <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-user"></i><span>Profile</span>
+          </a>
+        </nav>
+      </div>
+    </header>
+    <?php else: ?>
+    <header class="child-header">
+      <div class="child-header__inner">
+        <div class="child-header__titles">
+          <span class="child-header__greeting">Welcome back</span>
+          <span class="child-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'User'); ?></span>
+        </div>
+        <div class="child-header__actions">
+          <?php if (!empty($isChildNotificationUser)): ?>
+            <button type="button" class="page-header-action notification-trigger" data-child-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($notificationCount > 0): ?>
+                <span class="notification-badge"><?php echo (int) $notificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <nav class="nav-links" aria-label="Primary">
+        <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-house"></i><span>Dashboard</span>
+        </a>
+        <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-repeat"></i><span>Routines</span>
+        </a>
+        <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+        </a>
+        <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+        </a>
+        <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-gift"></i><span>Rewards</span>
+        </a>
+        <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-user"></i><span>Profile</span>
+        </a>
+      </nav>
+    </header>
+    <?php endif; ?>
     <main class="routine-layout">
         <?php if (!empty($messages)): ?>
             <div class="page-messages">
@@ -2008,8 +2202,10 @@ margin-bottom: 20px;}
                                 <?php if (empty($routine_tasks)): ?>
                                     <p class="no-data">No routine tasks available yet. Add a task to start building routines.</p>
                                 <?php else: ?>
-                                    <div class="library-table-wrap">
-                                        <div class="library-card-list">
+                                    <details class="library-collapse">
+                                        <summary class="library-toggle">View Saved Library Tasks</summary>
+                                        <div class="library-table-wrap">
+                                            <div class="library-card-list">
                                                 <?php foreach ($routine_tasks as $task): ?>
                                                     <?php
                                                         $taskMinSeconds = isset($task['minimum_seconds']) ? (int) $task['minimum_seconds'] : 0;
@@ -2080,7 +2276,8 @@ margin-bottom: 20px;}
                                             </article>
                                                 <?php endforeach; ?>
                                             </div>
-                                    </div>
+                                        </div>
+                                    </details>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -2384,18 +2581,7 @@ margin-bottom: 20px;}
                             <form method="POST" action="routine.php" class="parent-complete-form" id="parent-complete-form-<?php echo (int) $routine['id']; ?>">
                                 <input type="hidden" name="routine_id" value="<?php echo (int) $routine['id']; ?>">
                                 <input type="hidden" name="parent_completed_at" value="{}" data-role="parent-completed-at">
-                                <?php if ((int) ($routine['bonus_points'] ?? 0) > 0): ?>
-                                    <?php
-                                        $routineId = (int) ($routine['id'] ?? 0);
-                                        $bonusChecked = !empty($parentGrantBonusCheckedByRoutine[$routineId])
-                                            || !empty($routineBonusGrantedTodayById[$routineId]);
-                                    ?>
-                                    <label class="task-checkbox parent-bonus-toggle">
-                                        <input type="checkbox" name="parent_grant_bonus" value="1"<?php echo $bonusChecked ? ' checked' : ''; ?>>
-                                        <span>Grant bonus points (+<?php echo (int) ($routine['bonus_points'] ?? 0); ?>)</span>
-                                    </label>
-                                <?php endif; ?>
-                                <p class="parent-complete-note">Check completed tasks to award routine task points. Bonus points are granted only when selected above.</p>
+                                <p class="parent-complete-note">Check the tasks completed to award points. Bonus points apply only when all tasks are checked.</p>
                             </form>
                         <?php endif; ?>
                         <?php if ($isChildView): ?>
@@ -2655,132 +2841,93 @@ margin-bottom: 20px;}
             <?php endif; ?>
         </section>
         <?php if ($isParentContext): ?>
-            <div class="routine-completion-section" id="routine-completion-section">
-                <h2>Routine Completion Timeline</h2>
-                <p>See when routines start and finish, task completion times, and status screen time between tasks.</p>
-                <?php if (empty($routineCompletionSessions)): ?>
-                    <p class="completion-task-empty">No routine completion data yet.</p>
-                <?php else: ?>
-                    <div class="routine-completion-list">
-                        <?php foreach ($routineCompletionSessions as $index => $session): ?>
-                            <?php
-                                $sessionId = (int) ($session['id'] ?? 0);
-                                $tasks = $routineCompletionTasks[$sessionId] ?? [];
-                                $startedAt = !empty($session['started_at']) ? date('m/d/Y g:i A', strtotime($session['started_at'])) : '--';
-                                $completedAt = !empty($session['completed_at']) ? date('m/d/Y g:i A', strtotime($session['completed_at'])) : '--';
-                                $completedBy = ($session['completed_by'] ?? '') === 'parent' ? 'parent' : 'child';
-                                $badgeLabel = $completedBy === 'parent' ? 'Parent Managed' : 'Child';
-                                $totalTaskStarsAwarded = 0;
-                                $totalActualTaskSeconds = 0;
-                                foreach ($tasks as $taskRow) {
-                                    $totalTaskStarsAwarded += max(0, (int) ($taskRow['stars_awarded'] ?? 0));
-                                    $taskActualSeconds = $taskRow['actual_seconds'] ?? null;
-                                    if ($taskActualSeconds !== null) {
-                                        $totalActualTaskSeconds += max(0, (int) $taskActualSeconds);
-                                    }
-                                }
-                                $levelStarsAwarded = (int) floor($totalTaskStarsAwarded / 4);
-                                $hasPointsData = $session['awarded_task_points'] !== null || $session['awarded_bonus_points'] !== null;
-                                $awardedTaskPoints = $session['awarded_task_points'] !== null ? (int) $session['awarded_task_points'] : null;
-                                $awardedBonusPoints = $session['awarded_bonus_points'] !== null ? (int) $session['awarded_bonus_points'] : null;
-                                $routineTaskPointsWorth = (int) ($session['routine_task_points_worth'] ?? 0);
-                                $routineBonusPointsWorth = max(0, (int) ($session['routine_bonus_points_worth'] ?? 0));
-                                $routineWindowMinutes = $calculateRoutineWindowMinutes($session['routine_start_time'] ?? null, $session['routine_end_time'] ?? null);
-                                $taskTimeTakenLabel = $completedBy === 'child'
-                                    ? $formatDurationOrDash($totalActualTaskSeconds > 0 ? $totalActualTaskSeconds : null)
-                                    : '--:--';
-                                $routineWindowLabel = $routineWindowMinutes !== null ? $formatMinutesLabel($routineWindowMinutes) : '--';
-                                $taskPointsLabel = $awardedTaskPoints !== null
-                                    ? sprintf('%d / %d', max(0, (int) $awardedTaskPoints), $routineTaskPointsWorth)
-                                    : sprintf('-- / %d', $routineTaskPointsWorth);
-                                $bonusLabel = sprintf(
-                                    '%s / %d',
-                                    $awardedBonusPoints !== null ? (string) max(0, $awardedBonusPoints) : '--',
-                                    $routineBonusPointsWorth
-                                );
-                                $openAttr = $index === 0 ? ' open' : '';
-                            ?>
-                            <details class="routine-completion-card"<?php echo $openAttr; ?>>
-                                <summary>
-                                    <div class="completion-summary">
-                                        <div class="completion-title"><?php echo htmlspecialchars($session['routine_title'] ?? 'Routine'); ?></div>
-                                        <div class="completion-child"><?php echo htmlspecialchars($session['child_display_name'] ?? 'Child'); ?></div>
-                                    </div>
-                                    <div class="completion-meta">
-                                        <span>Ended: <?php echo htmlspecialchars($completedAt); ?></span>
-                                        <span class="completion-badge <?php echo $completedBy; ?>"><?php echo $badgeLabel; ?></span>
-                                        <div class="completion-quick-stats">
-                                            <span><strong>Task Points:</strong> <?php echo htmlspecialchars($taskPointsLabel); ?></span>
-                                            <span><strong>Bonus points:</strong> <?php echo htmlspecialchars($bonusLabel); ?></span>
-                                            <span><strong>Stars:</strong> <?php echo (int) $levelStarsAwarded; ?> <i class="fa-solid fa-star"></i></span>
-                                            <span><strong>Task Time:</strong> <?php echo htmlspecialchars($taskTimeTakenLabel); ?></span>
-                                            <span><strong>Routine Window:</strong> <?php echo htmlspecialchars($routineWindowLabel); ?></span>
-                                        </div>
-                                    </div>
-                                </summary>
-                                <div class="completion-body">
-                                    <div class="completion-times">
-                                        <span>Started: <?php echo htmlspecialchars($startedAt); ?></span>
-                                        <span>Ended: <?php echo htmlspecialchars($completedAt); ?></span>
-                                        <?php if ($completedBy === 'parent'): ?>
-                                            <span class="completion-note">Completed by parent (no timing data).</span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="completion-task-list">
-                                        <?php if (empty($tasks)): ?>
-                                            <div class="completion-task-empty">No task timing data recorded.</div>
-                                        <?php else: ?>
-                                            <?php foreach ($tasks as $taskRow): ?>
-                                                <?php
-                                                    $taskDoneAt = !empty($taskRow['completed_at']) ? date('g:i A', strtotime($taskRow['completed_at'])) : '--';
-                                                    $statusSeconds = (int) ($taskRow['status_screen_seconds'] ?? 0);
-                                                    $scheduledSeconds = $taskRow['scheduled_seconds'] ?? null;
-                                                    if ($completedBy === 'parent') {
-                                                        $taskLimitMinutes = (int) ($taskRow['task_time_limit'] ?? 0);
-                                                        $scheduledSeconds = $taskLimitMinutes > 0 ? $taskLimitMinutes * 60 : null;
-                                                    }
-                                                    $scheduledLabel = $formatDurationOrDash($scheduledSeconds);
-                                                    $actualLabel = $formatDurationOrDash($taskRow['actual_seconds'] ?? null);
-                                                ?>
-                                                <div class="completion-task-row">
-                                                    <div class="completion-task-header">
-                                                        <span class="completion-task-title"><?php echo htmlspecialchars($taskRow['task_title'] ?? 'Task'); ?></span>
-                                                        <span class="completion-task-time">Task done: <?php echo htmlspecialchars($taskDoneAt); ?></span>
-                                                    </div>
-                                                    <div class="completion-task-meta">
-                                                        <span><strong>Scheduled:</strong> <?php echo htmlspecialchars($scheduledLabel); ?></span>
-                                                        <?php if ($completedBy === 'child'): ?>
-                                                            <span><strong>Actual:</strong> <?php echo htmlspecialchars($actualLabel); ?></span>
-                                                            <span><strong>Status screen:</strong> <?php echo $formatDuration($statusSeconds); ?></span>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        <?php endif; ?>
-                                    </div>
+        <div class="routine-layout">
+        <div class="routine-completion-section" id="routine-completion-section">
+            <h2>Routine Completion Timeline</h2>
+            <p>See when routines start and finish, task completion times, and status screen time between tasks.</p>
+            <?php if (empty($routineCompletionSessions)): ?>
+                <p class="completion-task-empty">No routine completion data yet.</p>
+            <?php else: ?>
+                <div class="routine-completion-list">
+                    <?php foreach ($routineCompletionSessions as $index => $session): ?>
+                        <?php
+                            $sessionId = (int) ($session['id'] ?? 0);
+                            $tasks = $routineCompletionTasks[$sessionId] ?? [];
+                            $startedAt = !empty($session['started_at']) ? date('m/d/Y g:i A', strtotime($session['started_at'])) : '--';
+                            $completedAt = !empty($session['completed_at']) ? date('m/d/Y g:i A', strtotime($session['completed_at'])) : '--';
+                            $completedBy = ($session['completed_by'] ?? '') === 'parent' ? 'parent' : 'child';
+                            $badgeLabel = $completedBy === 'parent' ? 'Parent Managed' : 'Child';
+                            $openAttr = $index === 0 ? ' open' : '';
+                        ?>
+                        <details class="routine-completion-card"<?php echo $openAttr; ?>>
+                            <summary>
+                                <div class="completion-summary">
+                                    <div class="completion-title"><?php echo htmlspecialchars($session['routine_title'] ?? 'Routine'); ?></div>
+                                    <div class="completion-child"><?php echo htmlspecialchars($session['child_display_name'] ?? 'Child'); ?></div>
                                 </div>
-                            </details>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-            <div class="routine-analytics">
-                <h2>Routine Overtime Insights</h2>
-                <p>Track where routines run long so you can coach kids on timing and adjust expectations.</p>
-                <div class="overtime-grid">
-                    <div class="overtime-card">
-                        <h3>Top Overtime by Child</h3>
-                        <?php $topChild = array_slice($overtimeByChild, 0, 5); ?>
-                        <?php if (!empty($topChild)): ?>
-                            <table class="overtime-table">
-                                <thead>
-                                <tr>
-                                    <th>Child</th>
-                                    <th>Occurrences</th>
-                                    <th>Total OT (min)</th>
-                                </tr>
-                                </thead>
-                                <tbody>
+                                <div class="completion-meta">
+                                    <span>Ended: <?php echo htmlspecialchars($completedAt); ?></span>
+                                    <span class="completion-badge <?php echo $completedBy; ?>"><?php echo $badgeLabel; ?></span>
+                                </div>
+                            </summary>
+                            <div class="completion-body">
+                                <div class="completion-times">
+                                    <span>Started: <?php echo htmlspecialchars($startedAt); ?></span>
+                                    <span>Ended: <?php echo htmlspecialchars($completedAt); ?></span>
+                                    <?php if ($completedBy === 'parent'): ?>
+                                        <span class="completion-note">Completed by parent (no timing data).</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="completion-task-list">
+                                    <?php if (empty($tasks)): ?>
+                                        <div class="completion-task-empty">No task timing data recorded.</div>
+                                    <?php else: ?>
+                                        <?php foreach ($tasks as $taskRow): ?>
+                                            <?php
+                                                $taskDoneAt = !empty($taskRow['completed_at']) ? date('g:i A', strtotime($taskRow['completed_at'])) : '--';
+                                                $statusSeconds = (int) ($taskRow['status_screen_seconds'] ?? 0);
+                                                $scheduledSeconds = $taskRow['scheduled_seconds'] ?? null;
+                                                if ($completedBy === 'parent') {
+                                                    $taskLimitMinutes = (int) ($taskRow['task_time_limit'] ?? 0);
+                                                    $scheduledSeconds = $taskLimitMinutes > 0 ? $taskLimitMinutes * 60 : null;
+                                                }
+                                                $scheduledLabel = $formatDurationOrDash($scheduledSeconds);
+                                                $actualLabel = $formatDurationOrDash($taskRow['actual_seconds'] ?? null);
+                                            ?>
+                                            <div class="completion-task-row">
+                                                <div class="completion-task-header">
+                                                    <span class="completion-task-title"><?php echo htmlspecialchars($taskRow['task_title'] ?? 'Task'); ?></span>
+                                                    <span class="completion-task-time">Task done: <?php echo htmlspecialchars($taskDoneAt); ?></span>
+                                                </div>
+                                                <div class="completion-task-meta">
+                                                    <span><strong>Scheduled:</strong> <?php echo htmlspecialchars($scheduledLabel); ?></span>
+                                                    <?php if ($completedBy === 'child'): ?>
+                                                        <span><strong>Actual:</strong> <?php echo htmlspecialchars($actualLabel); ?></span>
+                                                        <span><strong>Status screen:</strong> <?php echo $formatDuration($statusSeconds); ?></span>
+                                                    <?php endif; ?>
+                                                    <span><strong>Stars:</strong> <?php echo (int) ($taskRow['stars_awarded'] ?? 0); ?> <i class="fa-solid fa-star"></i></span>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </details>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        <div class="routine-analytics">
+            <h2>Routine Overtime Insights</h2>
+            <p>Track where routines run long so you can coach kids on timing and adjust expectations.</p>
+            <div class="overtime-grid">
+                <div class="overtime-card">
+                    <h3>Top Overtime by Child</h3>
+                    <?php $topChild = array_slice($overtimeByChild, 0, 5); ?>
+                    <?php if (!empty($topChild)): ?>
+                        <table class="overtime-table">
+                            <thead><tr><th>Child</th><th>Occurrences</th><th>Total OT (min)</th></tr></thead>
+                            <tbody>
                                 <?php foreach ($topChild as $childRow): ?>
                                     <tr>
                                         <td><?php echo htmlspecialchars($childRow['child_display_name']); ?></td>
@@ -2788,30 +2935,23 @@ margin-bottom: 20px;}
                                         <td><?php echo round(((int) $childRow['total_overtime_seconds']) / 60, 1); ?></td>
                                     </tr>
                                 <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php else: ?>
-                            <p class="overtime-empty">No overtime data recorded yet.</p>
-                        <?php endif; ?>
-                    </div>
-                    <div class="overtime-card">
-                        <h3>Routines with Most Overtime</h3>
-                        <?php $topRoutine = array_slice($overtimeByRoutine, 0, 5); ?>
-                        <?php if (!empty($topRoutine)): ?>
-                            <table class="overtime-table">
-                                <thead>
-                                <tr>
-                                    <th>Routine</th>
-                                    <th>Occurrences</th>
-                                    <th>Total OT (min)</th>
-                                </tr>
-                                </thead>
-                                <tbody>
+                            </tbody>
+                        </table>
+                    <?php else: ?>
+                        <p class="overtime-empty">No overtime data recorded yet.</p>
+                    <?php endif; ?>
+                </div>
+                <div class="overtime-card">
+                    <h3>Routines with Most Overtime</h3>
+                    <?php $topRoutine = array_slice($overtimeByRoutine, 0, 5); ?>
+                    <?php if (!empty($topRoutine)): ?>
+                        <table class="overtime-table">
+                            <thead><tr><th>Routine</th><th>Occurrences</th><th>Total OT (min)</th></tr></thead>
+                            <tbody>
                                 <?php foreach ($topRoutine as $routineRow): ?>
                                     <tr>
                                         <td>
-                                            <button type="button"
-                                                    class="routine-log-link"
+                                            <button type="button" class="routine-log-link"
                                                     data-routine-log-trigger
                                                     data-routine-id="<?php echo (int) $routineRow['routine_id']; ?>"
                                                     data-routine-title="<?php echo htmlspecialchars($routineRow['routine_title']); ?>">
@@ -2822,60 +2962,70 @@ margin-bottom: 20px;}
                                         <td><?php echo round(((int) $routineRow['total_overtime_seconds']) / 60, 1); ?></td>
                                     </tr>
                                 <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php else: ?>
-                            <p class="overtime-empty">No recurring overtime yet. Great job!</p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <div class="overtime-card" id="overtime-section" style="margin-top: 20px;">
-                    <h3>Most Recent Overtime Events</h3>
-                    <?php if (!empty($overtimeLogGroups)): ?>
-                        <div class="overtime-accordion">
-                            <?php $firstDate = true; ?>
-                            <?php foreach ($overtimeLogGroups as $dateGroup): ?>
-                                <details class="overtime-date" <?php echo $firstDate ? 'open' : ''; ?>>
-                                    <summary>
-                                        <span class="ot-date-label"><?php echo htmlspecialchars($dateGroup['label']); ?></span>
-                                        <span class="overtime-date-count"><?php echo (int) $dateGroup['count']; ?> event<?php echo $dateGroup['count'] === 1 ? '' : 's'; ?></span>
-                                    </summary>
-                                    <div class="overtime-routine-list">
-                                        <?php foreach ($dateGroup['routines'] as $routineGroup): ?>
-                                            <details class="overtime-routine" data-routine-id="<?php echo (int) ($routineGroup['entries'][0]['routine_id'] ?? 0); ?>" open>
-                                                <summary>
-                                                    <span class="ot-routine-title"><?php echo htmlspecialchars($routineGroup['title']); ?></span>
-                                                    <span class="overtime-routine-count"><?php echo count($routineGroup['entries']); ?> miss<?php echo count($routineGroup['entries']) === 1 ? '' : 'es'; ?></span>
-                                                </summary>
-                                                <div class="overtime-card-list">
-                                                    <?php foreach ($routineGroup['entries'] as $entry): ?>
-                                                        <?php $occurTs = strtotime($entry['occurred_at']); ?>
-                                                        <div class="overtime-card-row">
-                                                            <div class="ot-row-header">
-                                                                <span class="ot-task"><?php echo htmlspecialchars($entry['task_title']); ?></span>
-                                                                <span class="ot-time"><?php echo $occurTs ? date('g:i A', $occurTs) : 'Time unavailable'; ?></span>
-                                                            </div>
-                                                            <div class="ot-meta"><strong>Child:</strong> <?php echo htmlspecialchars($entry['child_display_name']); ?></div>
-                                                            <div class="ot-meta">
-                                                                <strong>Planned:</strong> <?php echo round(((int) ($entry['scheduled_seconds'] ?? 0)) / 60, 1); ?> min
-                                                                · <strong>Actual:</strong> <?php echo round(((int) ($entry['actual_seconds'] ?? 0)) / 60, 1); ?> min
-                                                                · <strong>Overtime:</strong> <?php echo round(((int) ($entry['overtime_seconds'] ?? 0)) / 60, 1); ?> min
-                                                            </div>
-                                                        </div>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                            </details>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </details>
-                                <?php $firstDate = false; ?>
-                            <?php endforeach; ?>
-                        </div>
+                            </tbody>
+                        </table>
                     <?php else: ?>
-                        <p class="overtime-empty">No overtime events logged yet.</p>
+                        <p class="overtime-empty">No recurring overtime yet. Great job!</p>
                     <?php endif; ?>
                 </div>
             </div>
+            <div class="overtime-card" id="overtime-section" style="margin-top: 20px;">
+                <h3>Most Recent Overtime Events</h3>
+                <?php if (!empty($overtimeLogGroups)): ?>
+                    <div class="overtime-accordion">
+                        <?php $firstDate = true; ?>
+                        <?php foreach ($overtimeLogGroups as $dateGroup): ?>
+                            <details class="overtime-date" <?php echo $firstDate ? 'open' : ''; ?>>
+                                <summary>
+                                    <span class="ot-date-label"><?php echo htmlspecialchars($dateGroup['label']); ?></span>
+                                    <span class="overtime-date-count"><?php echo (int) $dateGroup['count']; ?> event<?php echo $dateGroup['count'] === 1 ? '' : 's'; ?></span>
+                                </summary>
+                                <div class="overtime-routine-list">
+                                    <?php foreach ($dateGroup['routines'] as $routineGroup): ?>
+                                        <details class="overtime-routine" data-routine-id="<?php echo (int) ($routineGroup['entries'][0]['routine_id'] ?? 0); ?>" open>
+                                            <summary>
+                                                <span class="ot-routine-title"><?php echo htmlspecialchars($routineGroup['title']); ?></span>
+                                                <span class="overtime-routine-count"><?php echo count($routineGroup['entries']); ?> miss<?php echo count($routineGroup['entries']) === 1 ? '' : 'es'; ?></span>
+                                            </summary>
+                                            <div class="overtime-card-list">
+                                                <?php foreach ($routineGroup['entries'] as $entry): ?>
+                                                    <?php $occurTs = strtotime($entry['occurred_at']); ?>
+                                                    <div class="overtime-card-row">
+                                                        <div class="ot-row-header">
+                                                            <span class="ot-task"><?php echo htmlspecialchars($entry['task_title']); ?></span>
+                                                            <span class="ot-time"><?php echo $occurTs ? date('g:i A', $occurTs) : 'Time unavailable'; ?></span>
+                                                        </div>
+                                                        <div class="ot-meta"><strong>Child:</strong> <?php echo htmlspecialchars($entry['child_display_name']); ?></div>
+                                                        <div class="ot-meta">
+                                                            <strong>Scheduled:</strong> <?php echo $formatDuration($entry['scheduled_seconds']); ?>
+                                                            <strong>Actual:</strong> <?php echo $formatDuration($entry['actual_seconds']); ?>
+                                                        </div>
+                                                        <div class="ot-meta ot-overtime"><strong>Overtime:</strong> <?php echo $formatDuration($entry['overtime_seconds']); ?></div>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </details>
+                                    <?php endforeach; ?>
+                                </div>
+                            </details>
+                            <?php $firstDate = false; ?>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <p class="overtime-empty">No overtime events have been logged yet.</p>
+                <?php endif; ?>
+            </div>
+            <div class="routine-log-modal" id="routine-log-modal" aria-hidden="true" role="dialog" aria-modal="true">
+                <div class="routine-log-dialog">
+                    <div class="routine-log-header">
+                        <h4 class="routine-log-title" data-role="routine-log-title">Routine Overtime</h4>
+                        <button type="button" class="routine-log-close" data-role="routine-log-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="routine-log-body" data-role="routine-log-body"></div>
+                </div>
+            </div>
+        </div>
+        </div><!-- /.routine-layout -->
         <?php endif; ?>
     </main>
     <div class="routine-modal blocked" data-routine-blocked-modal>
@@ -2921,10 +3071,39 @@ margin-bottom: 20px;}
             </div>
         </div>
     </div>
-    <?php include __DIR__ . '/includes/page_footer.php'; ?>
+    <nav class="bottom-nav" aria-label="Primary">
+      <a class="bottom-nav__item<?php echo $dashboardActive ? ' bottom-nav__item--active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-house"></i>
+        <span class="bottom-nav__label">Dashboard</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $routinesActive ? ' bottom-nav__item--active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-repeat"></i>
+        <span class="bottom-nav__label">Routines</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $tasksActive ? ' bottom-nav__item--active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-list-check"></i>
+        <span class="bottom-nav__label">Tasks</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $goalsActive ? ' bottom-nav__item--active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-bullseye"></i>
+        <span class="bottom-nav__label">Goals</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $rewardsActive ? ' bottom-nav__item--active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-gift"></i>
+        <span class="bottom-nav__label">Rewards</span>
+      </a>
+    </nav>
+    <footer>
+      <p>Child Task and Chore App - Ver 3.27.0</p>
+    </footer>
     <script>
         window.RoutinePage = <?php echo json_encode($pageState, $jsonOptions); ?>;
     </script>
+    <?php if ($isParentContext): ?>
+    <script>
+        window.RoutineOvertimeByRoutine = <?php echo json_encode($overtimeLogsByRoutine, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+    </script>
+    <?php endif; ?>
     <script>
         (function() {
             const page = window.RoutinePage || {
@@ -5485,18 +5664,6 @@ margin-bottom: 20px;}
             }
 
             const params = new URLSearchParams(window.location.search);
-            document.querySelectorAll('[data-routine-log-trigger]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const routineId = btn.getAttribute('data-routine-id');
-                    if (!routineId) return;
-                    const target = document.querySelector(`.overtime-routine[data-routine-id="${routineId}"]`);
-                    if (!target) return;
-                    const parentDate = target.closest('.overtime-date');
-                    if (parentDate) parentDate.open = true;
-                    target.open = true;
-                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                });
-            });
             const startParam = params.get('start');
             if (startParam) {
                 const match = routinePlayers.find(entry => entry.id === String(startParam));
@@ -5513,6 +5680,84 @@ margin-bottom: 20px;}
             }
         })();
     </script>
+    <?php if ($isParentContext): ?>
+    <script>
+        (function() {
+            const routineLogModal = document.getElementById('routine-log-modal');
+            const routineLogTitle = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-title"]') : null;
+            const routineLogBody = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-body"]') : null;
+            const routineLogClose = routineLogModal ? routineLogModal.querySelector('[data-role="routine-log-close"]') : null;
+            const routineLogsByRoutine = window.RoutineOvertimeByRoutine || {};
+
+            const formatDuration = (seconds) => {
+                const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+                const mins = Math.floor(safe / 60);
+                const secs = safe % 60;
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            };
+
+            const openRoutineLogModal = (routineId, routineTitle) => {
+                if (!routineLogModal || !routineLogBody || !routineLogTitle) return;
+                const key = String(routineId || routineTitle || '');
+                const group = routineLogsByRoutine[String(routineId)] || routineLogsByRoutine[key] || null;
+                const entries = group && Array.isArray(group.entries) ? group.entries : [];
+                routineLogTitle.textContent = routineTitle || (group ? group.title : 'Routine Overtime');
+                routineLogBody.innerHTML = '';
+                if (!entries.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'routine-log-empty';
+                    empty.textContent = 'No recent overtime events for this routine.';
+                    routineLogBody.appendChild(empty);
+                } else {
+                    entries.forEach(entry => {
+                        const item = document.createElement('div');
+                        item.className = 'routine-log-item';
+                        const when = entry.occurred_at ? new Date(entry.occurred_at) : null;
+                        const header = document.createElement('div');
+                        header.className = 'meta';
+                        header.textContent = when ? when.toLocaleString() : 'Date unavailable';
+                        const child = document.createElement('div');
+                        child.className = 'meta';
+                        child.textContent = `Child: ${entry.child_display_name || 'Unknown'}`;
+                        const task = document.createElement('div');
+                        task.className = 'meta';
+                        task.textContent = `Task: ${entry.task_title || 'Task'}`;
+                        const times = document.createElement('div');
+                        times.className = 'meta';
+                        times.textContent = `Scheduled: ${formatDuration(entry.scheduled_seconds)} - Actual: ${formatDuration(entry.actual_seconds)}`;
+                        const overtime = document.createElement('div');
+                        overtime.className = 'overtime';
+                        overtime.textContent = `Overtime: ${formatDuration(entry.overtime_seconds)}`;
+                        item.append(header, child, task, times, overtime);
+                        routineLogBody.appendChild(item);
+                    });
+                }
+                routineLogModal.classList.add('active');
+                routineLogModal.setAttribute('aria-hidden', 'false');
+            };
+
+            const closeRoutineLogModal = () => {
+                if (!routineLogModal) return;
+                routineLogModal.classList.remove('active');
+                routineLogModal.setAttribute('aria-hidden', 'true');
+            };
+
+            if (routineLogClose) {
+                routineLogClose.addEventListener('click', closeRoutineLogModal);
+            }
+            if (routineLogModal) {
+                routineLogModal.addEventListener('click', (event) => {
+                    if (event.target === routineLogModal) { closeRoutineLogModal(); }
+                });
+            }
+            document.querySelectorAll('[data-routine-log-trigger]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    openRoutineLogModal(btn.getAttribute('data-routine-id'), btn.getAttribute('data-routine-title'));
+                });
+            });
+        })();
+    </script>
+    <?php endif; ?>
   <script src="js/number-stepper.js" defer></script>
 <?php if (!empty($isParentNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_parent.php'; ?>
@@ -5523,6 +5768,12 @@ margin-bottom: 20px;}
 </body>
 </html>
 <?php
+
+
+
+
+
+
 
 
 

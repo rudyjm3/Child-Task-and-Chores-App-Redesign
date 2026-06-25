@@ -7,13 +7,27 @@
 
 session_start();
 require_once __DIR__ . '/includes/functions.php';
-require_once __DIR__ . '/includes/page_setup.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
+$currentPage = basename($_SERVER['PHP_SELF']);
+
+// Ensure a friendly display name is available in session
+if (!isset($_SESSION['name'])) {
+    $_SESSION['name'] = getDisplayName($_SESSION['user_id']);
+}
+
+$family_root_id = getFamilyRootId($_SESSION['user_id']);
 $goalRole = getEffectiveRole($_SESSION['user_id']);
 if (in_array($goalRole, ['main_parent', 'secondary_parent', 'family_member', 'caregiver'], true)) {
     autoCloseExpiredGoals($family_root_id, null);
 } elseif ($goalRole === 'child') {
     autoCloseExpiredGoals(null, (int) $_SESSION['user_id']);
 }
+
+require_once __DIR__ . '/includes/notifications_bootstrap.php';
 
 function resolveGoalRewardId($parent_id, $child_id, $reward_selection) {
     global $db;
@@ -166,31 +180,31 @@ function hydrateGoalTaskData(array $goals) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['create_goal']) && isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
         $child_user_id = filter_input(INPUT_POST, 'child_user_id', FILTER_VALIDATE_INT);
-        $title = trim((string)($_POST['title'] ?? ''));
-        $description = trim((string) trim((string)($_POST['description'] ?? '')));
+        $title = filter_input(INPUT_POST, 'title', FILTER_SANITIZE_STRING);
+        $description = trim((string) filter_input(INPUT_POST, 'description', FILTER_SANITIZE_STRING));
         if ($description === '') {
             $description = null;
         }
-        $start_date = trim((string)($_POST['start_date'] ?? ''));
-        $end_date = trim((string)($_POST['end_date'] ?? ''));
+        $start_date = filter_input(INPUT_POST, 'start_date', FILTER_SANITIZE_STRING);
+        $end_date = filter_input(INPUT_POST, 'end_date', FILTER_SANITIZE_STRING);
         $start_offset = filter_input(INPUT_POST, 'start_tz_offset', FILTER_VALIDATE_INT);
         $end_offset = filter_input(INPUT_POST, 'end_tz_offset', FILTER_VALIDATE_INT);
         $start_date = normalizeGoalDateTimeInput($start_date, $start_offset);
         $end_date = normalizeGoalDateTimeInput($end_date, $end_offset);
         $reward_selection = $_POST['reward_id'] ?? '';
         $reward_id = resolveGoalRewardId($family_root_id, $child_user_id, $reward_selection);
-        $goal_type = trim((string)($_POST['goal_type'] ?? '')) ?: 'manual';
+        $goal_type = filter_input(INPUT_POST, 'goal_type', FILTER_SANITIZE_STRING) ?: 'manual';
         $allowed_types = ['manual', 'routine_streak', 'routine_count', 'task_quota'];
         if (!in_array($goal_type, $allowed_types, true)) {
             $goal_type = 'manual';
         }
         $routine_ids = array_values(array_filter(array_map('intval', $_POST['routine_ids'] ?? [])));
-        $task_category = trim((string)($_POST['task_category'] ?? ''));
+        $task_category = filter_input(INPUT_POST, 'task_category', FILTER_SANITIZE_STRING);
         $target_count = filter_input(INPUT_POST, 'target_count', FILTER_VALIDATE_INT);
         $streak_required = filter_input(INPUT_POST, 'streak_required', FILTER_VALIDATE_INT);
         $require_on_time = !empty($_POST['require_on_time']);
         $points_awarded = filter_input(INPUT_POST, 'points_awarded', FILTER_VALIDATE_INT);
-        $award_mode = trim((string)($_POST['award_mode'] ?? '')) ?: 'both';
+        $award_mode = filter_input(INPUT_POST, 'award_mode', FILTER_SANITIZE_STRING) ?: 'both';
         $requires_parent_approval = isset($_POST['requires_parent_approval']) ? 1 : 0;
         $task_target_ids = array_values(array_filter(array_map('intval', $_POST['task_target_ids'] ?? [])));
         $reactivateOnSave = !empty($_POST['reactivate_on_save']);
@@ -222,32 +236,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (isset($_POST['update_goal']) && isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
         $goal_id = filter_input(INPUT_POST, 'goal_id', FILTER_VALIDATE_INT);
         $child_user_id = filter_input(INPUT_POST, 'child_user_id', FILTER_VALIDATE_INT);
-        $title = trim((string)($_POST['title'] ?? ''));
-        $description = trim((string) trim((string)($_POST['description'] ?? '')));
+        $title = filter_input(INPUT_POST, 'title', FILTER_SANITIZE_STRING);
+        $description = trim((string) filter_input(INPUT_POST, 'description', FILTER_SANITIZE_STRING));
         if ($description === '') {
             $description = null;
         }
         $reactivateOnSave = !empty($_POST['reactivate_on_save']);
-        $start_date = trim((string)($_POST['start_date'] ?? ''));
-        $end_date = trim((string)($_POST['end_date'] ?? ''));
+        $start_date = filter_input(INPUT_POST, 'start_date', FILTER_SANITIZE_STRING);
+        $end_date = filter_input(INPUT_POST, 'end_date', FILTER_SANITIZE_STRING);
         $start_offset = filter_input(INPUT_POST, 'start_tz_offset', FILTER_VALIDATE_INT);
         $end_offset = filter_input(INPUT_POST, 'end_tz_offset', FILTER_VALIDATE_INT);
         $start_date = normalizeGoalDateTimeInput($start_date, $start_offset);
         $end_date = normalizeGoalDateTimeInput($end_date, $end_offset);
         $reward_selection = $_POST['reward_id'] ?? '';
         $reward_id = resolveGoalRewardId($family_root_id, $child_user_id, $reward_selection);
-        $goal_type = trim((string)($_POST['goal_type'] ?? '')) ?: 'manual';
+        $goal_type = filter_input(INPUT_POST, 'goal_type', FILTER_SANITIZE_STRING) ?: 'manual';
         $allowed_types = ['manual', 'routine_streak', 'routine_count', 'task_quota'];
         if (!in_array($goal_type, $allowed_types, true)) {
             $goal_type = 'manual';
         }
         $routine_ids = array_values(array_filter(array_map('intval', $_POST['routine_ids'] ?? [])));
-        $task_category = trim((string)($_POST['task_category'] ?? ''));
+        $task_category = filter_input(INPUT_POST, 'task_category', FILTER_SANITIZE_STRING);
         $target_count = filter_input(INPUT_POST, 'target_count', FILTER_VALIDATE_INT);
         $streak_required = filter_input(INPUT_POST, 'streak_required', FILTER_VALIDATE_INT);
         $require_on_time = !empty($_POST['require_on_time']);
         $points_awarded = filter_input(INPUT_POST, 'points_awarded', FILTER_VALIDATE_INT);
-        $award_mode = trim((string)($_POST['award_mode'] ?? '')) ?: 'both';
+        $award_mode = filter_input(INPUT_POST, 'award_mode', FILTER_SANITIZE_STRING) ?: 'both';
         $requires_parent_approval = isset($_POST['requires_parent_approval']) ? 1 : 0;
         $task_target_ids = array_values(array_filter(array_map('intval', $_POST['task_target_ids'] ?? [])));
 
@@ -512,9 +526,20 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
     $rejected_goals = array_filter($all_goals, function($g) { return $g['status'] === 'rejected'; });
 }
 
+$welcome_role_label = getUserRoleLabel($_SESSION['user_id']);
+if (!$welcome_role_label) {
+    $fallback_role = getEffectiveRole($_SESSION['user_id']) ?: ($_SESSION['role'] ?? null);
+    if ($fallback_role) {
+        $welcome_role_label = ucfirst(str_replace('_', ' ', $fallback_role));
+    }
+}
+
 $bodyClasses = [];
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     $bodyClasses[] = 'child-theme';
+    $bodyClasses[] = 'role-child';
+} else {
+    $bodyClasses[] = 'role-parent';
 }
 
 $goalFormData = null;
@@ -561,7 +586,16 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<?php $pageTitle = 'Goal Management'; include __DIR__ . '/includes/html_head.php'; ?>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Management</title>
+    <link rel="stylesheet" href="css/main.css?v=3.27.0">
+    <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
+    <link rel="stylesheet" href="css/child.css?v=3.27.0">
+    <?php else: ?>
+    <link rel="stylesheet" href="css/parent.css?v=3.27.0">
+    <?php endif; ?>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         .goal-list {
             padding: 20px;
@@ -654,8 +688,6 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             border-bottom: 1px solid #e0e0e0;
         }
         @media (max-width: 768px) {
-            .goal-list { padding-left: 0; padding-right: 0; }
-            .goal-actions { padding-left: 0; padding-right: 0; }
             .goal-create-body {
                 padding-left: 14px;
                 padding-right: 14px;
@@ -1024,9 +1056,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
         .goal-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
         .goal-card-actions { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
         .goal-card-badges { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-        .goal-card-footer { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 25px; }
-        .goal-footer-actions { display: flex; flex: 1; gap: 8px; }
-        .goal-footer-actions .button { flex: 1; justify-content: center; }
+        .goal-card-footer { display: flex; justify-content: flex-end; margin-top: 14px; }
         .task-card-menu { position: relative; }
         .task-card-menu-toggle { width: 42px; height: 42px; border-radius: 14px; border: 1px solid #e0e0e0; background: #f5f7fb; color: #546e7a; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
         .task-card-menu-list { position: absolute; bottom: calc(100% + 10px); right: 0; background: #fff; border: 1px solid #e6ebf1; border-radius: 12px; box-shadow: 0 10px 20px rgba(0,0,0,0.12); padding: 8px; display: none; min-width: 190px; z-index: 10; }
@@ -1081,7 +1111,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             --goal-progress-tick-width: 1px;
             --goal-progress-tick-color: #ffb74d;
         }
-        .child-theme .goal-progress-bar span { background: linear-gradient(90deg, #a5d6a7, #66bb6a, #388e3c); background-size: 200% 100%; animation: goal-spark 2.4s linear 1 forwards; box-shadow: 0 0 8px rgba(76, 175, 80, 0.35); }
+        .child-theme .goal-progress-bar span { background: linear-gradient(90deg, #ff6f61, #ffd54f, #4caf50); background-size: 200% 100%; animation: goal-spark 2.4s linear infinite; box-shadow: 0 0 8px rgba(255, 111, 97, 0.35); }
         .child-theme .goal-progress-bar.complete span { background: #4caf50; animation: none; box-shadow: none; }
         @keyframes goal-fill {
             from { transform: scaleX(0); }
@@ -1128,7 +1158,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             border-radius: 5px;
             cursor: pointer;
         }
-        /* .role-badge {
+        .role-badge {
             background: #4caf50;
             color: #fff;
             padding: 2px 8px;
@@ -1136,7 +1166,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             font-size: 0.9em;
             margin-left: 8px;
             display: inline-block;
-        } */
+        }
         .edit-delete a {
             margin-right: 10px;
             color: #007bff;
@@ -1163,22 +1193,116 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             background-color: #ffebee; /* Light red for rejected goals */
             border-left: 5px solid #f44336;
         }
-        /* .no-scroll, page-header, nav-links, nav-mobile-bottom → css/shared.css */
-        .goal-deny-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 4500; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
-        .goal-deny-modal.open { opacity: 1; pointer-events: all; }
-        .goal-deny-modal-card { background: #fff; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); padding: 24px; max-width: 440px; width: calc(100% - 32px); display: grid; }
-        .goal-deny-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-        .goal-deny-modal-header h2 { margin: 0; font-size: 1.1rem; }
-        .goal-deny-modal-close { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: #555; line-height: 1; padding: 0; }
-        .goal-deny-modal-sub { color: #555; font-size: 0.9rem; margin: 0 0 12px; }
-        .goal-deny-modal-textarea { width: 100%; box-sizing: border-box; min-height: 80px; resize: vertical; border: 1.5px solid #e0e0e0; border-radius: 8px; padding: 10px 12px; font-size: 0.95rem; background: #f8f8fc; font-family: inherit; }
-        .goal-deny-modal-textarea:focus { outline: none; border-color: #e53935; }
-        .goal-deny-modal-actions { display: flex; gap: 10px; margin-top: 14px; }
-        .goal-deny-modal-actions .button { flex: 1; justify-content: center; }
+        .no-scroll { overflow: hidden; }
+        .nav-link-button { background: transparent; border: none; cursor: pointer; }
     </style>
 </head>
 <body<?php echo !empty($bodyClasses) ? ' class="' . implode(' ', $bodyClasses) . '"' : ''; ?>>
-    <?php $pageHeading = 'Goal Management'; $isParentContext = canCreateContent($_SESSION['user_id']); include __DIR__ . '/includes/page_header.php'; ?>
+    <?php
+        $dashboardPage = 'dashboard_' . ($_SESSION['role'] ?? 'parent') . '.php';
+        $dashboardActive = $currentPage === $dashboardPage;
+        $routinesActive = $currentPage === 'routine.php';
+        $tasksActive = $currentPage === 'task.php';
+        $goalsActive = $currentPage === 'goal.php';
+        $rewardsActive = $currentPage === 'rewards.php';
+        $profileActive = $currentPage === 'profile.php';
+        $isParentContext = canCreateContent($_SESSION['user_id']);
+    ?>
+    <?php if ($isParentContext): ?>
+    <header class="parent-header">
+      <div class="parent-header__top">
+        <div class="parent-header__titles">
+          <span class="parent-header__greeting">Welcome back</span>
+          <span class="parent-header__name">
+            <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'Unknown User'); ?>
+            <?php if ($welcome_role_label): ?>
+              <span class="role-badge"><?php echo htmlspecialchars($welcome_role_label); ?></span>
+            <?php endif; ?>
+          </span>
+        </div>
+        <div class="parent-header__actions">
+          <?php if (!empty($isParentNotificationUser)): ?>
+            <button type="button" class="page-header-action parent-notification-trigger" data-parent-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($parentNotificationCount > 0): ?>
+                <span class="parent-notification-badge"><?php echo (int) $parentNotificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+            <a class="page-header-action" href="dashboard_parent.php#manage-family" aria-label="Family settings">
+              <i class="fa-solid fa-gear"></i>
+            </a>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <div class="parent-header__nav">
+        <nav class="nav-links" aria-label="Primary">
+          <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-house"></i><span>Dashboard</span>
+          </a>
+          <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-repeat"></i><span>Routines</span>
+          </a>
+          <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+          </a>
+          <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+          </a>
+          <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-gift"></i><span>Rewards Shop</span>
+          </a>
+          <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+            <i class="fa-solid fa-user"></i><span>Profile</span>
+          </a>
+        </nav>
+      </div>
+    </header>
+    <?php else: ?>
+    <header class="child-header">
+      <div class="child-header__inner">
+        <div class="child-header__titles">
+          <span class="child-header__greeting">Welcome back</span>
+          <span class="child-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'Unknown User'); ?></span>
+        </div>
+        <div class="child-header__actions">
+          <?php if (!empty($isChildNotificationUser)): ?>
+            <button type="button" class="page-header-action notification-trigger" data-child-notify-trigger aria-label="Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <?php if ($notificationCount > 0): ?>
+                <span class="notification-badge"><?php echo (int) $notificationCount; ?></span>
+              <?php endif; ?>
+            </button>
+          <?php endif; ?>
+          <a class="page-header-action" href="logout.php" aria-label="Logout">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      </div>
+      <nav class="nav-links" aria-label="Primary">
+        <a class="nav-link<?php echo $dashboardActive ? ' is-active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-house"></i><span>Dashboard</span>
+        </a>
+        <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-repeat"></i><span>Routines</span>
+        </a>
+        <a class="nav-link<?php echo $tasksActive ? ' is-active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-list-check"></i><span>Tasks</span>
+        </a>
+        <a class="nav-link<?php echo $goalsActive ? ' is-active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-bullseye"></i><span>Goals</span>
+        </a>
+        <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-gift"></i><span>Rewards Shop</span>
+        </a>
+        <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
+          <i class="fa-solid fa-user"></i><span>Profile</span>
+        </a>
+      </nav>
+    </header>
+    <?php endif; ?>
     <?php $celebrationGoals = ($_SESSION['role'] === 'child') ? [] : null; ?>
     <main class="<?php echo ($_SESSION['role'] === 'child') ? 'child-view' : ''; ?>">
         <?php if (isset($message)) echo "<p>$message</p>"; ?>
@@ -1365,29 +1489,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                                         </div>
                                     </div>
                                     <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                        <?php if ($goal['status'] === 'pending_approval'): ?>
-                                            <form method="POST" action="goal.php" id="approve-goal-form-<?php echo (int) $goal['id']; ?>">
-                                                <input type="hidden" name="goal_id" value="<?php echo (int) $goal['id']; ?>">
-                                            </form>
-                                            <form method="POST" action="goal.php" id="reject-goal-form-<?php echo (int) $goal['id']; ?>">
-                                                <input type="hidden" name="goal_id" value="<?php echo (int) $goal['id']; ?>">
-                                            </form>
-                                        <?php endif; ?>
                                         <div class="goal-card-footer">
-                                            <?php if ($goal['status'] === 'pending_approval'): ?>
-                                                <div class="goal-footer-actions">
-                                                    <button type="submit" name="approve_goal" class="button"
-                                                            form="approve-goal-form-<?php echo (int) $goal['id']; ?>">
-                                                        <i class="fa-solid fa-circle-check"></i> Approve
-                                                    </button>
-                                                    <button type="button" class="button danger"
-                                                            data-goal-deny-open
-                                                            data-form-id="reject-goal-form-<?php echo (int) $goal['id']; ?>"
-                                                            data-child-name="<?php echo htmlspecialchars($goal['child_display_name'], ENT_QUOTES); ?>">
-                                                        <i class="fa-solid fa-xmark"></i> Deny
-                                                    </button>
-                                                </div>
-                                            <?php endif; ?>
                                             <div class="task-card-menu" data-goal-menu>
                                                 <button type="button" class="task-card-menu-toggle" aria-label="Open goal actions" data-goal-menu-toggle>
                                                     <i class="fa-solid fa-ellipsis-vertical"></i>
@@ -1411,6 +1513,19 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                                                 </div>
                                             </div>
                                         </div>
+                                    <?php endif; ?>
+                                    <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
+                                        <?php if ($goal['status'] === 'pending_approval'): ?>
+                                            <form method="POST" action="goal.php">
+                                                <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                                <button type="submit" name="approve_goal" class="button">Approve</button>
+                                                <button type="submit" name="reject_goal" class="button" style="background-color: #f44336;">Deny</button>
+                                                <div class="reject-comment">
+                                                    <label for="rejection_comment_<?php echo $goal['id']; ?>">Reason (optional):</label>
+                                                    <textarea id="rejection_comment_<?php echo $goal['id']; ?>" name="rejection_comment"></textarea>
+                                                </div>
+                                            </form>
+                                        <?php endif; ?>
                             <?php elseif ($_SESSION['role'] === 'child' && $goal['status'] === 'active' && ($goal['goal_type'] ?? 'manual') === 'manual'): ?>
                                         <form method="POST" action="goal.php">
                                             <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
@@ -1652,22 +1767,6 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                 </details>
             <?php endif; ?>
         </div>
-    <div class="goal-deny-modal" id="goal-deny-modal">
-        <div class="goal-deny-modal-card" role="dialog" aria-modal="true" aria-labelledby="goal-deny-modal-title">
-            <div class="goal-deny-modal-header">
-                <h2 id="goal-deny-modal-title">Deny Goal</h2>
-                <button type="button" class="goal-deny-modal-close" data-goal-deny-close aria-label="Close">&times;</button>
-            </div>
-            <p id="goal-deny-modal-sub" class="goal-deny-modal-sub"></p>
-            <textarea id="goal-deny-note-input" name="rejection_comment"
-                      class="goal-deny-modal-textarea"
-                      placeholder="Reason for denying (optional)" rows="4"></textarea>
-            <div class="goal-deny-modal-actions">
-                <button type="button" class="button secondary" data-goal-deny-cancel>Cancel</button>
-                <button type="submit" name="reject_goal" id="goal-deny-submit-btn" class="button danger">Deny Goal</button>
-            </div>
-        </div>
-    </div>
     </main>
     <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
         <div class="goal-create-modal" data-goal-create-modal>
@@ -2232,7 +2331,31 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             const celebrationQueue = <?php echo json_encode($celebrationGoals, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
         </script>
     <?php endif; ?>
-    <?php include __DIR__ . '/includes/page_footer.php'; ?>
+    <nav class="bottom-nav" aria-label="Primary">
+      <a class="bottom-nav__item<?php echo $dashboardActive ? ' bottom-nav__item--active' : ''; ?>" href="<?php echo htmlspecialchars($dashboardPage); ?>"<?php echo $dashboardActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-house"></i>
+        <span class="bottom-nav__label">Dashboard</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $routinesActive ? ' bottom-nav__item--active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-repeat"></i>
+        <span class="bottom-nav__label">Routines</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $tasksActive ? ' bottom-nav__item--active' : ''; ?>" href="task.php"<?php echo $tasksActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-list-check"></i>
+        <span class="bottom-nav__label">Tasks</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $goalsActive ? ' bottom-nav__item--active' : ''; ?>" href="goal.php"<?php echo $goalsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-bullseye"></i>
+        <span class="bottom-nav__label">Goals</span>
+      </a>
+      <a class="bottom-nav__item<?php echo $rewardsActive ? ' bottom-nav__item--active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
+        <i class="fa-solid fa-gift"></i>
+        <span class="bottom-nav__label">Rewards</span>
+      </a>
+    </nav>
+    <footer>
+      <p>Child Task and Chore App - Ver 3.27.0</p>
+    </footer>
   <script src="js/number-stepper.js" defer></script>
   <script>
       const goalCreateModal = document.querySelector('[data-goal-create-modal]');
@@ -2849,40 +2972,8 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
 <?php if (!empty($isChildNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_child.php'; ?>
 <?php endif; ?>
-<script>
-(function () {
-    const modal     = document.getElementById('goal-deny-modal');
-    if (!modal) return;
-    const titleEl   = document.getElementById('goal-deny-modal-title');
-    const subEl     = document.getElementById('goal-deny-modal-sub');
-    const noteEl    = document.getElementById('goal-deny-note-input');
-    const submitBtn = document.getElementById('goal-deny-submit-btn');
-
-    function openModal(formId, childName) {
-        titleEl.textContent = 'Deny Goal for ' + childName;
-        subEl.textContent   = 'Optionally provide a reason for ' + childName + ':';
-        noteEl.value = '';
-        noteEl.setAttribute('form', formId);
-        submitBtn.setAttribute('form', formId);
-        modal.classList.add('open');
-        document.body.classList.add('no-scroll');
-        setTimeout(function () { noteEl.focus(); }, 50);
-    }
-
-    function closeModal() {
-        modal.classList.remove('open');
-        document.body.classList.remove('no-scroll');
-    }
-
-    document.addEventListener('click', function (e) {
-        const trigger = e.target.closest('[data-goal-deny-open]');
-        if (trigger) { openModal(trigger.dataset.formId, trigger.dataset.childName); return; }
-        if (e.target.closest('[data-goal-deny-close]') || e.target.closest('[data-goal-deny-cancel]')) { closeModal(); return; }
-        if (e.target === modal) closeModal();
-    });
-}());
-</script>
 </body>
 </html>
+
 
 

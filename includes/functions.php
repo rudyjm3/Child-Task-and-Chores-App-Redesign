@@ -1145,6 +1145,12 @@ function completeTask($task_id, $child_id, $photo_proof = null, $instance_date =
 
     if ($isRecurring) {
         $dateKey = $instance_date ?: date('Y-m-d');
+        $checkStmt = $db->prepare("SELECT status FROM task_instances WHERE task_id = :task_id AND date_key = :date_key LIMIT 1");
+        $checkStmt->execute([':task_id' => $task_id, ':date_key' => $dateKey]);
+        $existingStatus = $checkStmt->fetchColumn();
+        if ($existingStatus === 'approved') {
+            return false;
+        }
         $stmt = $db->prepare("
             INSERT INTO task_instances (task_id, date_key, status, photo_proof, completed_at, created_at)
             VALUES (:task_id, :date_key, 'completed', :photo_proof, NOW(), NOW())
