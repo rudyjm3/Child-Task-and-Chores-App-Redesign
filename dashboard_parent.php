@@ -1401,6 +1401,68 @@ function renderStreakCheckSvg($suffix) {
         .member-remove-modal .actions { display: grid; gap: 10px; }
         .member-remove-modal .actions .button { width: 100%; }
         .member-remove-modal .subtext { color: #555; font-size: 0.95rem; }
+
+        /* ── Design System Overrides ─────────────────── */
+        body { background: var(--color-bg); }
+        .dashboard { padding: 0 0 calc(var(--nav-height) + 24px); max-width: 100%; margin: 0; }
+
+        /* Children overview — horizontal scroll row */
+        .children-overview { margin: 0; padding: 16px var(--mobile-pad) 0; }
+        .children-overview h2 { font-size: var(--text-lg); font-weight: 700; color: var(--color-text-dark); margin: 0 0 12px; }
+        .children-overview-grid { display: flex; flex-direction: column; gap: 16px; }
+
+        /* Child info card — white card with purple accent */
+        .child-info-card { background: var(--color-white); border: 1.5px solid var(--color-slate); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); margin: 0; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+        /* Child header: avatar + name row */
+        .child-info-header { flex-direction: row; align-items: center; text-align: left; gap: 12px; }
+        .child-info-header img { width: 52px; height: 52px; border: 2.5px solid var(--color-primary-light); }
+        .child-info-name { font-size: var(--text-lg); font-weight: 700; color: var(--color-text-dark); }
+
+        /* Level badge — purple scheme */
+        .level-badge { background: var(--color-primary-light); border: 1px solid var(--color-primary-mid); width: auto; margin: 0; }
+        .level-badge-title { color: var(--color-primary); }
+        .level-progress-fill { background: var(--gradient-primary); }
+        .level-progress-bar { background: rgba(109,40,217,0.12); border: none; }
+        .level-progress-meta { color: var(--color-text-sec); }
+
+        /* Points panel — purple/gold scheme */
+        .points-progress-wrapper { background: var(--color-white); border: 1.5px solid var(--color-slate); border-radius: var(--radius-lg); }
+        .points-number { background: var(--color-gold-light); border: 1px solid var(--color-gold); color: var(--color-gold); font-size: var(--text-2xl); }
+        .points-number i { color: var(--color-gold); }
+        .points-progress-label { color: var(--color-text-sec); }
+
+        /* Adjust button — purple */
+        .adjust-button { background: var(--gradient-primary) !important; border-radius: var(--radius-lg) !important; font-weight: 600 !important; }
+        /* History button — teal */
+        .history-button { background: var(--gradient-teal) !important; border-radius: var(--radius-lg) !important; font-weight: 600 !important; }
+
+        /* Child stats grid — purple icons */
+        .child-stats-grid { border: 1.5px solid var(--color-slate); border-radius: var(--radius-lg); }
+        .child-stat-icon { background: var(--color-primary-light); color: var(--color-primary); }
+        .child-stat-badge { background: var(--color-primary-light); color: var(--color-primary); }
+        .child-stat-link { border-right-color: var(--color-slate); }
+
+        /* Schedule items — purple icons */
+        .child-schedule-card { border: 1.5px solid var(--color-slate); border-radius: var(--radius-lg); }
+        .child-schedule-card .child-schedule-main > i.fa-list-check { color: var(--color-primary); }
+        .child-schedule-card .child-schedule-main > i.fa-repeat { color: var(--color-accent); }
+        .child-schedule-points { background: var(--color-gold-light); color: var(--color-gold); }
+
+        /* Badge pills — purple */
+        .badge-pill { color: var(--color-primary); border-color: var(--color-primary-light); }
+        .badge-pill:hover { background: var(--color-primary-light); }
+        .badge-count { color: var(--color-primary); }
+
+        /* View week button */
+        .view-week-button { background: var(--color-primary-light); border-color: var(--color-primary-mid); color: var(--color-primary); }
+
+        /* Section headers */
+        .children-overview h2,
+        .management-links h2,
+        .active-rewards h2,
+        .redeemed-rewards h2,
+        .manage-family h2 { font-size: var(--text-lg); font-weight: 700; color: var(--color-text-dark); }
     </style>
     <script>
         // JS for Manage Family Wizard (step-by-step)

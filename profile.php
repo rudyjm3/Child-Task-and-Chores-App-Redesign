@@ -413,6 +413,13 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
             .profile-form { padding: 15px; }
         }
         .section-divider { border-top: 1px solid #e0e0e0; margin: 18px 0 10px; padding-top: 14px; }
+
+        /* ── Design System Overrides ─────────────────── */
+        body { background: var(--color-bg); }
+        .profile { padding: 16px var(--mobile-pad); max-width: 640px; margin: 0 auto calc(var(--nav-height) + 16px); text-align: center; }
+        .profile-form { background: var(--color-white); border: 1.5px solid var(--color-slate); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); }
+        .button { background: var(--color-primary); border-radius: var(--radius-md); }
+        .avatar-option.selected { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-light); }
     </style>
     <script>
         // JS for avatar selection

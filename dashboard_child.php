@@ -288,75 +288,86 @@ function renderStreakCheckSvg($suffix) {
     <link rel="stylesheet" href="css/child.css?v=3.27.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
-        /* ── Page-specific layout ── */
-        .dashboard { padding: 16px var(--mobile-pad); max-width: 100%; margin: 0 auto; }
-        .points-summary { margin: 16px 0; display: flex; align-items: flex-start; gap: 20px; text-align: left; }
-        .points-left { display: contents; }
-        .child-identity { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 120px; }
-        .child-avatar-wrap { position: relative; display: inline-block; }
-        .child-avatar { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 3px solid var(--color-gold); background: var(--color-white); box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
-        .child-first-name { font-size: var(--text-base); font-weight: 700; color: var(--color-text-dark); }
-        .points-total { margin: 0; font-weight: 700; color: var(--color-text-dark); display: flex; flex-direction: column; gap: 6px; text-align: center; }
-        .points-total-label { text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-danger); margin-right: 6px; font-size: var(--text-xl); }
-        .points-total-value { color: var(--color-gold); font-size: var(--text-hero); }
-        .points-history-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin: 6px auto 0; background: var(--color-white); border: 2px solid var(--color-gold); border-radius: var(--radius-full); padding: 6px 12px; color: var(--color-warning); font-weight: 700; cursor: pointer; }
-        /* ── Goal summary widget ── */
-        .goal-summary { flex: 1; min-width: 220px; background: var(--color-white); border: 2px solid var(--color-gold); border-radius: var(--radius-md); padding: 12px; box-shadow: var(--shadow-card); display: grid; gap: 10px; }
-        .goal-summary-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-        .goal-summary-title { font-weight: 800; color: var(--color-warning); margin: 0; font-size: var(--text-base); }
-        .goal-item { background: #fff7e6; border: 1px solid var(--color-gold); border-radius: var(--radius-sm); padding: 10px; display: grid; gap: 6px; text-align: left; }
-        .goal-item-title { font-weight: 700; color: var(--color-text-dark); }
-        .goal-item-meta { font-size: var(--text-sm); color: var(--color-text-sec); }
-        .goal-item-desc { font-size: var(--text-sm); color: var(--color-text-sec); }
-        .goal-progress-bar { height: 20px; border-radius: var(--radius-full); background: #ffe9c6; overflow: hidden; border: 1px solid #ffb74d; }
-        .goal-progress-bar span { display: block; height: 100%; background: linear-gradient(90deg, #ff6f61, #ffd54f, #4caf50); background-size: 200% 100%; width: 0; transition: width 300ms ease; animation: goal-spark 2.4s linear infinite; box-shadow: 0 0 8px rgba(255,111,97,0.35); }
-        .goal-progress-bar.complete span { background: var(--color-success); animation: none; box-shadow: none; }
-        .goal-next-needed { font-size: var(--text-sm); color: var(--color-text-sec); }
-        .goal-pending-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: var(--radius-full); background: var(--color-warning-light); color: var(--color-warning); font-size: var(--text-sm); font-weight: 700; }
-        /* ── Week calendar widget ── */
-        .week-calendar { flex: 1; min-width: 220px; text-align: left; }
-        .week-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-        .week-day { background: var(--color-slate); border: 1px solid #d5def0; border-radius: var(--radius-sm); padding: 8px 0; display: grid; gap: 2px; justify-items: center; font-weight: 700; color: var(--color-text-sec); cursor: pointer; }
-        .week-day.active { background: var(--color-warning-light); border-color: var(--color-gold); }
-        .week-day-name-full, .week-day-name-initial { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.04em; }
-        .week-day-name-initial { display: none; }
-        .week-day-num { font-size: var(--text-base); }
-        .week-schedule { margin-top: 10px; display: grid; gap: 8px; }
+        /* ── Page layout ── */
+        body { background: var(--color-bg); }
+        .dashboard { padding: 0 0 calc(var(--nav-height) + 24px); max-width: 100%; }
+
+        /* ── Hero Card (extends components.css .hero-card) ── */
+        .hero-card { margin-top: 12px; }
+        .hero-card__info { display: flex; flex-direction: column; gap: 5px; }
+        .hero-card__pts-value { font-size: var(--text-xl); font-weight: 700; color: var(--color-white); }
+        .hero-card__pts-btn { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; background: rgba(255,255,255,0.18); color: var(--color-white); font-size: var(--text-xs); font-weight: 600; padding: 4px 10px; border-radius: var(--radius-full); border: none; cursor: pointer; }
+        .hero-card__xp-meta { display: flex; justify-content: space-between; font-size: var(--text-xs); color: rgba(255,255,255,0.65); }
+        .hero-card__stat { align-items: center; }
+
+        /* ── Week Strip ── */
+        .week-strip-section { background: var(--color-white); box-shadow: var(--shadow-header); margin-top: 12px; padding: 12px var(--mobile-pad) 0; }
+        .week-strip-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .week-strip-title { font-size: var(--text-md); font-weight: 700; color: var(--color-text-dark); }
+        .week-strip-link { font-size: var(--text-sm); font-weight: 600; color: var(--color-accent); text-decoration: none; }
+        .week-days { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+        .week-days::-webkit-scrollbar { display: none; }
+        .week-day { flex: 1; min-width: 38px; display: flex; flex-direction: column; align-items: center; padding: 8px 0 4px; border-radius: 14px; background: transparent; border: none; cursor: pointer; gap: 1px; }
+        .week-day.active { background: var(--color-primary); }
+        .week-day-name-full { display: none; }
+        .week-day-name-initial { font-size: 11px; font-weight: 400; color: var(--color-text-sec); }
+        .week-day.active .week-day-name-initial { color: var(--color-white); font-weight: 600; }
+        .week-day-num { font-size: 17px; font-weight: 700; color: var(--color-text-dark); }
+        .week-day.active .week-day-num { color: var(--color-white); }
+        .week-schedule { margin-top: 8px; display: grid; gap: 8px; padding-bottom: 12px; }
         .week-section { display: grid; gap: 6px; }
-        .week-section-title { font-weight: 700; color: var(--color-text-sec); font-size: var(--text-base); }
-        .week-section-list { display: grid; gap: 8px; }
-        .week-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fff7e6; border: 1px solid var(--color-gold); border-radius: var(--radius-sm); padding: 8px 10px; text-decoration: none; color: inherit; cursor: pointer; }
-        .week-item:hover { background: #ffefcc; }
-        .week-item-main { display: flex; align-items: center; gap: 8px; }
-        .week-item-icon { color: var(--color-warning); }
-        .nav-link .week-item-icon, .bottom-nav .week-item-icon { color: inherit; }
-        .week-item-title { font-weight: 700; color: var(--color-text-dark); }
+        .week-section-title { font-size: var(--text-sm); font-weight: 600; color: var(--color-text-sec); text-transform: uppercase; letter-spacing: 0.05em; }
+        .week-section-list { display: grid; gap: 6px; }
+        .week-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--color-white); border: 1px solid var(--color-slate); border-radius: var(--radius-lg); padding: 10px 12px; text-decoration: none; color: inherit; cursor: pointer; box-shadow: var(--shadow-chip); }
+        .week-item:hover { background: var(--color-primary-light); border-color: var(--color-primary-mid); }
+        .week-item-main { display: flex; align-items: center; gap: 10px; }
+        .week-item-icon { color: var(--color-primary); font-size: 1rem; }
+        .week-item-title { font-weight: 600; color: var(--color-text-dark); font-size: var(--text-base); }
         .week-item-meta { color: var(--color-text-sec); font-size: var(--text-sm); }
-        .week-item-points { display: inline-flex; align-items: center; gap: 6px; color: var(--color-gold); font-size: var(--text-sm); font-weight: 700; border-radius: var(--radius-full); background-color: #fffbeb; padding: 4px 8px; white-space: nowrap; }
-        .week-item-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: 700; background: var(--color-success); color: var(--color-white); text-transform: uppercase; }
-        .week-item-badge.compact { justify-content: center; margin-left: 6px; width: 20px; height: 20px; padding: 0; border-radius: 50%; font-size: var(--text-xs); }
+        .week-item-points { display: inline-flex; align-items: center; gap: 4px; color: var(--color-gold); font-size: var(--text-sm); font-weight: 700; background: var(--color-gold-light); padding: 3px 8px; border-radius: var(--radius-full); white-space: nowrap; }
+        .week-item-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: 700; background: var(--color-success); color: var(--color-white); }
+        .week-item-badge.compact { justify-content: center; margin-left: 6px; width: 20px; height: 20px; padding: 0; border-radius: 50%; }
         .week-item-badge.overdue { background: var(--color-danger); }
         .week-item-badge-group { display: inline-flex; align-items: center; }
+
+        /* ── Goal summary widget ── */
+        .goal-summary { margin: 12px var(--mobile-pad) 0; background: var(--color-white); border: 1.5px solid var(--color-gold); border-radius: var(--radius-xl); padding: 14px; box-shadow: var(--shadow-card); display: grid; gap: 10px; }
+        .goal-summary-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .goal-summary-title { font-weight: 800; color: var(--color-warning-dark); margin: 0; font-size: var(--text-md); }
+        .goal-summary-link { font-size: var(--text-sm); font-weight: 600; color: var(--color-primary); background: var(--color-primary-light); padding: 4px 12px; border-radius: var(--radius-full); text-decoration: none; }
+        .goal-item { background: var(--color-gold-light); border: 1px solid var(--color-gold); border-radius: var(--radius-md); padding: 10px; display: grid; gap: 6px; }
+        .goal-item-title { font-weight: 700; color: var(--color-text-dark); font-size: var(--text-base); }
+        .goal-item-meta { font-size: var(--text-sm); color: var(--color-text-sec); }
+        .goal-item-desc { font-size: var(--text-sm); color: var(--color-text-sec); }
+        .goal-progress-bar { height: 8px; border-radius: var(--radius-full); background: rgba(245,158,11,0.2); overflow: hidden; }
+        .goal-progress-bar span { display: block; height: 100%; background: var(--gradient-gold); background-size: 200% 100%; width: 0; transition: width 300ms ease; animation: goal-spark 2.4s linear infinite; }
+        .goal-progress-bar.complete span { background: var(--color-success); animation: none; }
+        .goal-next-needed { font-size: var(--text-sm); color: var(--color-text-sec); }
+        .goal-pending-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: var(--radius-full); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: var(--text-sm); font-weight: 700; }
+
         /* ── Quick nav cards ── */
-        .dashboard-cards { margin: 18px 0 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-        .dashboard-card { background: #fff7e6; border: 2px solid var(--color-gold); border-radius: var(--radius-md); padding: 14px 12px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; color: var(--color-text-dark); text-decoration: none; box-shadow: var(--shadow-card); position: relative; cursor: pointer; appearance: none; font-family: 'Sigmar One', cursive; }
-        .dashboard-card i { font-size: 1.2rem; color: var(--color-warning); }
-        .dashboard-card:hover { background: #ffe9c6; }
-        .dashboard-card-count { position: absolute; top: 8px; right: 10px; background: var(--color-danger); color: var(--color-white); font-size: var(--text-sm); min-width: 24px; height: 24px; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; box-shadow: var(--shadow-chip); }
-        .button { padding: 10px 20px; margin: 5px; background-color: #ff9800; color: white; border: none; border-radius: var(--radius-sm); cursor: pointer; text-decoration: none; display: inline-block; font-size: var(--text-xl); min-height: var(--touch-min); }
-        .redeem-button { background-color: #2196f3; }
+        .dashboard-cards { margin: 12px var(--mobile-pad) 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .dashboard-card { background: var(--color-white); border: 1.5px solid var(--color-slate); border-radius: var(--radius-xl); padding: 16px 14px; display: flex; align-items: center; gap: 12px; font-weight: 700; color: var(--color-text-dark); text-decoration: none; box-shadow: var(--shadow-card); position: relative; font-size: var(--text-base); }
+        .dashboard-card i { width: 36px; height: 36px; border-radius: var(--radius-md); background: var(--color-primary-light); color: var(--color-primary); display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+        .dashboard-card:hover { background: var(--color-primary-light); border-color: var(--color-primary-mid); }
+        .dashboard-card-count { position: absolute; top: 8px; right: 10px; background: var(--color-danger); color: var(--color-white); font-size: var(--text-xs); min-width: 20px; height: 20px; border-radius: var(--radius-full); display: inline-flex; align-items: center; justify-content: center; padding: 0 5px; font-weight: 700; }
+
+        /* ── Shared ── */
+        .button { padding: 8px 16px; background: var(--color-primary); color: var(--color-white); border: none; border-radius: var(--radius-lg); cursor: pointer; text-decoration: none; display: inline-block; font-size: var(--text-base); font-weight: 600; }
+        .redeem-button { background: var(--color-accent); }
         .trash-button { border: none; background: transparent; cursor: pointer; font-size: 1.1rem; padding: 4px; color: var(--color-danger); }
         .no-scroll { overflow: hidden; }
+
         /* ── Header action buttons ── */
-        .page-header-action { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #dfe8df; background: var(--color-white); color: var(--color-text-sec); box-shadow: var(--shadow-chip); cursor: pointer; }
+        .page-header-action { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--color-slate); background: var(--color-white); color: var(--color-text-sec); box-shadow: var(--shadow-chip); cursor: pointer; }
         .page-header-action i { font-size: 1.1rem; }
         .page-header-action:hover { color: var(--color-primary); border-color: var(--color-primary-light); }
-        /* ── Goal celebration overlay ── */
+
+        /* ── Goal celebration ── */
         .goal-celebration { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,248,225,0.92); z-index: var(--z-notification); }
         .goal-celebration.active { display: flex; }
         .goal-celebration-card { background: var(--color-white); border-radius: var(--radius-xl); padding: 24px 26px; text-align: center; box-shadow: var(--shadow-modal); position: relative; animation: pop-in 300ms ease; }
         .goal-celebration-close { position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; border: none; border-radius: 50%; background: var(--color-slate); color: var(--color-text-sec); cursor: pointer; }
-        .goal-celebration-close:hover { background: #e0e0e0; }
         .goal-celebration-icon { font-size: 2.2rem; color: var(--color-warning); margin-bottom: 8px; }
         .goal-celebration-title { font-weight: 800; color: var(--color-success); margin: 0 0 6px; }
         .goal-celebration-goal { margin: 0; color: var(--color-text-sec); font-weight: 700; }
@@ -1266,212 +1277,210 @@ foreach ($taskCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
          window.weekScheduleData = <?php echo json_encode($scheduleByDay, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
          window.weekScheduleToday = "<?php echo htmlspecialchars($todayDate, ENT_QUOTES); ?>";
       </script>
-      <div class="points-summary">
-         <div class="points-left">
-            <div class="child-identity">
-               <div class="child-avatar-wrap">
-                  <img class="child-avatar" src="<?php echo htmlspecialchars($childAvatar); ?>" alt="<?php echo htmlspecialchars($childFirstName !== '' ? $childFirstName : 'Child'); ?>">
-               </div>
-            <div class="child-first-name"><?php echo htmlspecialchars($childFirstName); ?></div>
-            <?php
-               $childLevel = (int) ($data['child_level'] ?? 1);
-               $starsInLevel = max(0, (int) ($data['stars_in_level'] ?? 0));
-               $starsPerLevel = max(1, (int) ($data['stars_per_level'] ?? 10));
-               $levelProgressPercent = min(100, max(0, (int) ($data['level_progress_percent'] ?? 0)));
-            ?>
-            <div class="level-badge">
-               <div class="level-badge-title">
-                  <i class="fa-solid fa-star"></i>
-                  <span>Level <?php echo $childLevel; ?></span>
-               </div>
-               <div class="level-progress-meta"><?php echo $starsInLevel; ?> / <?php echo $starsPerLevel; ?></div>
-               <div class="level-progress-bar" aria-label="Level progress">
-                  <span class="level-progress-fill" style="width: <?php echo $levelProgressPercent; ?>%;"></span>
-               </div>
+      <?php
+         $childLevel = (int) ($data['child_level'] ?? 1);
+         $starsInLevel = max(0, (int) ($data['stars_in_level'] ?? 0));
+         $starsPerLevel = max(1, (int) ($data['stars_per_level'] ?? 10));
+         $levelProgressPercent = min(100, max(0, (int) ($data['level_progress_percent'] ?? 0)));
+      ?>
+      <!-- Hero Card -->
+      <div class="hero-card">
+         <div class="hero-card__inner">
+            <div class="hero-card__avatar">
+               <img src="<?php echo htmlspecialchars($childAvatar); ?>" alt="<?php echo htmlspecialchars($childFirstName !== '' ? $childFirstName : 'Child'); ?>">
             </div>
-            <?php
-               $routineStreak = (int) ($data['routine_streak'] ?? 0);
-               $taskStreak = (int) ($data['task_streak'] ?? 0);
-               $streakDayLabels = [];
-               $streakDates = [];
-               $streakStart = (new DateTimeImmutable('today'))->modify('-6 days');
-               for ($i = 0; $i < 7; $i++) {
-                   $dateKey = $streakStart->modify('+' . $i . ' days')->format('Y-m-d');
-                   $streakDates[] = $dateKey;
-                   $streakDayLabels[] = strtoupper(substr(date('D', strtotime($dateKey)), 0, 1));
-               }
-               $routineWeekDates = array_values(array_unique(array_filter($data['routine_week_dates'] ?? [])));
-               $taskWeekDates = array_values(array_unique(array_filter($data['task_week_dates'] ?? [])));
-               $routineWeekSet = array_fill_keys($routineWeekDates, true);
-               $taskWeekSet = array_fill_keys($taskWeekDates, true);
-               $weeklyTaskCompletedCount = (int) ($data['weekly_task_completed_count'] ?? 0);
-               $showCompletedCount = $weeklyTaskCompletedCount >= 5;
-               $routineOnTimeRate = (int) ($data['routine_on_time_rate'] ?? 0);
-               $taskOnTimeRate = (int) ($data['task_on_time_rate'] ?? 0);
-               $routineBestStreak = (int) ($data['routine_best_streak'] ?? 0);
-               $taskBestStreak = (int) ($data['task_best_streak'] ?? 0);
-               $routineDayLabel = 'Days';
-               $taskDayLabel = 'Days';
-            ?>
-               <?php if ($routineStreak >= 2 || $taskStreak >= 2 || $showCompletedCount): ?>
-                  <div class="streak-concepts">
-                     <div class="streak-concept">
-                        <div class="streak-concept-label">Streaks</div>
-                        <div class="streak-concept-grid">
-                           <?php if ($routineStreak >= 2): ?>
-                           <div class="streak-mini-card"
-                                data-streak-celebration-trigger
-                                data-streak-type="routine"
-                                data-streak-value="<?php echo $routineStreak; ?>"
-                                data-child-id="<?php echo (int) $_SESSION['user_id']; ?>"
-                                data-child-name="<?php echo htmlspecialchars($childFirstName !== '' ? $childFirstName : ''); ?>">
-                              <div class="streak-mini-header">
-                                 <span class="streak-icon is-blue"><?php echo renderStreakFlameSvg('blue', 'child-a-routine'); ?></span>
-                                 Routine streak
-                              </div>
-                              <div class="streak-mini-value"><?php echo $routineStreak; ?><span><?php echo $routineDayLabel; ?></span></div>
-                              <div class="streak-week-row">
-                                 <?php foreach ($streakDayLabels as $index => $label): ?>
-                                    <?php
-                                       $weekDateKey = $streakDates[$index] ?? null;
-                                       $filled = $weekDateKey ? !empty($routineWeekSet[$weekDateKey]) : false;
-                                    ?>
-                                    <span class="streak-dot<?php echo $filled ? ' is-routine' : ''; ?>">
-                                       <?php if ($filled): ?>
-                                          <?php echo renderStreakCheckSvg('child-routine-' . $index); ?>
-                                       <?php else: ?>
-                                          <?php echo $label; ?>
-                                       <?php endif; ?>
-                                    </span>
-                                 <?php endforeach; ?>
-                              </div>
-                              <div class="streak-row-sub">Keep routines steady and strong.</div>
-                              <div class="streak-row-sub">Best: <?php echo $routineBestStreak; ?> Days &bull; On-time (7d): <?php echo $routineOnTimeRate; ?>%</div>
-                           </div>
-                           <?php endif; ?>
-                           <?php if ($taskStreak >= 2): ?>
-                           <div class="streak-mini-card"
-                                data-streak-celebration-trigger
-                                data-streak-type="task"
-                                data-streak-value="<?php echo $taskStreak; ?>"
-                                data-child-id="<?php echo (int) $_SESSION['user_id']; ?>"
-                                data-child-name="<?php echo htmlspecialchars($childFirstName !== '' ? $childFirstName : ''); ?>">
-                              <div class="streak-mini-header">
-                                 <span class="streak-icon"><?php echo renderStreakFlameSvg('orange', 'child-a-task'); ?></span>
-                                 Task streak
-                              </div>
-                              <div class="streak-mini-value"><?php echo $taskStreak; ?><span><?php echo $taskDayLabel; ?></span></div>
-                              <div class="streak-week-row">
-                                 <?php foreach ($streakDayLabels as $index => $label): ?>
-                                    <?php
-                                       $weekDateKey = $streakDates[$index] ?? null;
-                                       $filled = $weekDateKey ? !empty($taskWeekSet[$weekDateKey]) : false;
-                                    ?>
-                                    <span class="streak-dot<?php echo $filled ? ' is-task' : ''; ?>">
-                                       <?php if ($filled): ?>
-                                          <?php echo renderStreakCheckSvg('child-task-' . $index); ?>
-                                       <?php else: ?>
-                                          <?php echo $label; ?>
-                                       <?php endif; ?>
-                                    </span>
-                                 <?php endforeach; ?>
-                              </div>
-                              <div class="streak-row-sub">Tasks completed, streak on.</div>
-                              <div class="streak-row-sub">Best: <?php echo $taskBestStreak; ?> Days &bull; On-time (7d): <?php echo $taskOnTimeRate; ?>%</div>
-                           </div>
-                           <?php endif; ?>
-                           <?php if ($showCompletedCount): ?>
-                           <div class="streak-mini-card">
-                              <div class="streak-mini-header">
-                                 <span class="streak-icon"><?php echo renderStreakFlameSvg('orange', 'child-a-completed'); ?></span>
-                                 Tasks completed
-                              </div>
-                              <div class="streak-mini-value"><?php echo $weeklyTaskCompletedCount; ?><span>this week</span></div>
-                              <div class="streak-row-sub">Great momentum this week.</div>
-                           </div>
-                           <?php endif; ?>
-                        </div>
-                     </div>
-                  </div>
-               <?php endif; ?>
-            </div>
-            <div class="points-total">
-               <span class="points-total-label">Total Points</span>
-               <span class="points-total-value"><?php echo $childTotalPoints; ?></span>
-               <button type="button" class="points-history-button" data-points-history-open aria-haspopup="dialog" aria-controls="points-history-modal">
-                  <i class="fa-solid fa-clock-rotate-left"></i>History
-               </button>
-            </div>
-         </div>
-          <div class="goal-summary">
-             <div class="goal-summary-header">
-                <h3 class="goal-summary-title">Goals</h3>
-                <a class="button" href="goal.php">View</a>
-             </div>
-             <?php if (empty($dashboardGoals)): ?>
-                <div class="goal-item">
-                   <div class="goal-item-title">No active goals</div>
-                   <div class="goal-item-meta">Check back when a new goal is assigned.</div>
-                </div>
-             <?php else: ?>
-                <?php foreach ($dashboardGoals as $goal): ?>
-                   <?php
-                      $progress = $goal['progress'] ?? ['current' => 0, 'target' => 1, 'percent' => 0, 'goal_type' => 'manual'];
-                      $typeLabel = [
-                          'manual' => 'Manual',
-                          'routine_streak' => 'Routine streak',
-                          'routine_count' => 'Routine count',
-                          'task_quota' => 'Task count'
-                      ][$progress['goal_type']] ?? 'Goal';
-                   ?>
-                   <div class="goal-item">
-                      <div class="goal-item-title"><?php echo htmlspecialchars($goal['title']); ?></div>
-                      <?php if (!empty($goal['description'])): ?>
-                         <div class="goal-item-desc"><?php echo nl2br(htmlspecialchars($goal['description'])); ?></div>
-                      <?php endif; ?>
-                      <div class="goal-item-meta"><?php echo htmlspecialchars($typeLabel); ?> &bull; <?php echo (int) $progress['current']; ?> / <?php echo (int) $progress['target']; ?></div>
-                      <div class="goal-progress-bar">
-                         <span style="width: <?php echo (int) $progress['percent']; ?>%;"></span>
-                      </div>
-                      <?php if (!empty($progress['next_needed'])): ?>
-                         <div class="goal-next-needed">Next: <?php echo htmlspecialchars($progress['next_needed']); ?></div>
-                      <?php endif; ?>
-                      <?php if (($goal['status'] ?? '') === 'pending_approval'): ?>
-                         <span class="goal-pending-pill">Waiting for approval</span>
-                      <?php endif; ?>
-                   </div>
-                <?php endforeach; ?>
-             <?php endif; ?>
-          </div>
-          <div class="week-calendar">
-            <div class="week-days" aria-label="Current week">
-               <?php foreach ($weekDates as $day): ?>
-                  <button type="button" class="week-day<?php echo $day['date'] === $todayDate ? ' active' : ''; ?>" data-week-date="<?php echo htmlspecialchars($day['date']); ?>">
-                     <span class="week-day-name-full"><?php echo htmlspecialchars($day['day']); ?></span>
-                     <span class="week-day-name-initial"><?php echo htmlspecialchars(strtoupper(substr((string) $day['day'], 0, 1))); ?></span>
-                     <span class="week-day-num"><?php echo htmlspecialchars($day['num']); ?></span>
+            <div class="hero-card__info">
+               <div class="hero-card__name"><?php echo htmlspecialchars($childFirstName); ?></div>
+               <span class="hero-card__level-chip"><i class="fa-solid fa-star"></i> Level <?php echo $childLevel; ?></span>
+               <div class="hero-card__points-row">
+                  <span class="hero-card__points-dot"></span>
+                  <span class="hero-card__pts-value"><?php echo number_format($childTotalPoints); ?> pts</span>
+                  <button type="button" class="hero-card__pts-btn" data-points-history-open aria-haspopup="dialog" aria-controls="points-history-modal">
+                     <i class="fa-solid fa-clock-rotate-left"></i> History
                   </button>
-               <?php endforeach; ?>
+               </div>
+               <div class="hero-card__xp-meta">
+                  <span>Level XP</span>
+                  <span><?php echo $starsInLevel; ?> / <?php echo $starsPerLevel; ?></span>
+               </div>
+               <div class="hero-card__xp-bar">
+                  <div class="hero-card__xp-fill" style="width: <?php echo $levelProgressPercent; ?>%"></div>
+               </div>
+               <?php
+                  $routineStreak = (int) ($data['routine_streak'] ?? 0);
+                  $taskStreak = (int) ($data['task_streak'] ?? 0);
+                  $bestStreak = max($routineStreak, $taskStreak);
+                  $todayTasksTotal = $taskCount + $routineCount;
+               ?>
+               <div class="hero-card__stats">
+                  <div class="hero-card__stat">
+                     <span class="hero-card__stat-value"><?php echo $bestStreak; ?></span>
+                     <span class="hero-card__stat-label">Day Streak</span>
+                  </div>
+                  <div class="hero-card__stat">
+                     <span class="hero-card__stat-value"><?php echo $todayTasksTotal; ?></span>
+                     <span class="hero-card__stat-label">Today</span>
+                  </div>
+               </div>
             </div>
-            <div class="week-schedule" data-week-schedule></div>
          </div>
+      </div>
+
+      <!-- Streak section -->
+      <?php
+         $streakDayLabels = [];
+         $streakDates = [];
+         $streakStart = (new DateTimeImmutable('today'))->modify('-6 days');
+         for ($i = 0; $i < 7; $i++) {
+             $dateKey = $streakStart->modify('+' . $i . ' days')->format('Y-m-d');
+             $streakDates[] = $dateKey;
+             $streakDayLabels[] = strtoupper(substr(date('D', strtotime($dateKey)), 0, 1));
+         }
+         $routineWeekDates = array_values(array_unique(array_filter($data['routine_week_dates'] ?? [])));
+         $taskWeekDates = array_values(array_unique(array_filter($data['task_week_dates'] ?? [])));
+         $routineWeekSet = array_fill_keys($routineWeekDates, true);
+         $taskWeekSet = array_fill_keys($taskWeekDates, true);
+         $weeklyTaskCompletedCount = (int) ($data['weekly_task_completed_count'] ?? 0);
+         $showCompletedCount = $weeklyTaskCompletedCount >= 5;
+         $routineOnTimeRate = (int) ($data['routine_on_time_rate'] ?? 0);
+         $taskOnTimeRate = (int) ($data['task_on_time_rate'] ?? 0);
+         $routineBestStreak = (int) ($data['routine_best_streak'] ?? 0);
+         $taskBestStreak = (int) ($data['task_best_streak'] ?? 0);
+         $routineDayLabel = 'Days';
+         $taskDayLabel = 'Days';
+      ?>
+      <?php if ($routineStreak >= 2 || $taskStreak >= 2 || $showCompletedCount): ?>
+      <div style="padding: 0 var(--mobile-pad);">
+         <div class="streak-concepts">
+            <div class="streak-concept">
+               <div class="streak-concept-label">Streaks</div>
+               <div class="streak-concept-grid">
+                  <?php if ($routineStreak >= 2): ?>
+                  <div class="streak-mini-card" data-streak-celebration-trigger data-streak-type="routine" data-streak-value="<?php echo $routineStreak; ?>" data-child-id="<?php echo (int) $_SESSION['user_id']; ?>" data-child-name="<?php echo htmlspecialchars($childFirstName !== '' ? $childFirstName : ''); ?>">
+                     <div class="streak-mini-header">
+                        <span class="streak-icon is-blue"><?php echo renderStreakFlameSvg('blue', 'child-a-routine'); ?></span>
+                        Routine streak
+                     </div>
+                     <div class="streak-mini-value"><?php echo $routineStreak; ?><span><?php echo $routineDayLabel; ?></span></div>
+                     <div class="streak-week-row">
+                        <?php foreach ($streakDayLabels as $index => $label): ?>
+                           <?php $weekDateKey = $streakDates[$index] ?? null; $filled = $weekDateKey ? !empty($routineWeekSet[$weekDateKey]) : false; ?>
+                           <span class="streak-dot<?php echo $filled ? ' is-routine' : ''; ?>">
+                              <?php if ($filled): echo renderStreakCheckSvg('child-routine-' . $index); else: echo $label; endif; ?>
+                           </span>
+                        <?php endforeach; ?>
+                     </div>
+                     <div class="streak-row-sub">Keep routines steady and strong.</div>
+                     <div class="streak-row-sub">Best: <?php echo $routineBestStreak; ?> Days &bull; On-time (7d): <?php echo $routineOnTimeRate; ?>%</div>
+                  </div>
+                  <?php endif; ?>
+                  <?php if ($taskStreak >= 2): ?>
+                  <div class="streak-mini-card" data-streak-celebration-trigger data-streak-type="task" data-streak-value="<?php echo $taskStreak; ?>" data-child-id="<?php echo (int) $_SESSION['user_id']; ?>" data-child-name="<?php echo htmlspecialchars($childFirstName !== '' ? $childFirstName : ''); ?>">
+                     <div class="streak-mini-header">
+                        <span class="streak-icon"><?php echo renderStreakFlameSvg('orange', 'child-a-task'); ?></span>
+                        Task streak
+                     </div>
+                     <div class="streak-mini-value"><?php echo $taskStreak; ?><span><?php echo $taskDayLabel; ?></span></div>
+                     <div class="streak-week-row">
+                        <?php foreach ($streakDayLabels as $index => $label): ?>
+                           <?php $weekDateKey = $streakDates[$index] ?? null; $filled = $weekDateKey ? !empty($taskWeekSet[$weekDateKey]) : false; ?>
+                           <span class="streak-dot<?php echo $filled ? ' is-task' : ''; ?>">
+                              <?php if ($filled): echo renderStreakCheckSvg('child-task-' . $index); else: echo $label; endif; ?>
+                           </span>
+                        <?php endforeach; ?>
+                     </div>
+                     <div class="streak-row-sub">Tasks completed, streak on.</div>
+                     <div class="streak-row-sub">Best: <?php echo $taskBestStreak; ?> Days &bull; On-time (7d): <?php echo $taskOnTimeRate; ?>%</div>
+                  </div>
+                  <?php endif; ?>
+                  <?php if ($showCompletedCount): ?>
+                  <div class="streak-mini-card">
+                     <div class="streak-mini-header">
+                        <span class="streak-icon"><?php echo renderStreakFlameSvg('orange', 'child-a-completed'); ?></span>
+                        Tasks completed
+                     </div>
+                     <div class="streak-mini-value"><?php echo $weeklyTaskCompletedCount; ?><span>this week</span></div>
+                     <div class="streak-row-sub">Great momentum this week.</div>
+                  </div>
+                  <?php endif; ?>
+               </div>
+            </div>
+         </div>
+      </div>
+      <?php endif; ?>
+      <!-- Goal summary -->
+      <div class="goal-summary">
+         <div class="goal-summary-header">
+            <h3 class="goal-summary-title">Goals</h3>
+            <a class="goal-summary-link" href="goal.php">View</a>
+         </div>
+         <?php if (empty($dashboardGoals)): ?>
+            <div class="goal-item">
+               <div class="goal-item-title">No active goals</div>
+               <div class="goal-item-meta">Check back when a new goal is assigned.</div>
+            </div>
+         <?php else: ?>
+            <?php foreach ($dashboardGoals as $goal): ?>
+               <?php
+                  $progress = $goal['progress'] ?? ['current' => 0, 'target' => 1, 'percent' => 0, 'goal_type' => 'manual'];
+                  $typeLabel = [
+                      'manual' => 'Manual',
+                      'routine_streak' => 'Routine streak',
+                      'routine_count' => 'Routine count',
+                      'task_quota' => 'Task count'
+                  ][$progress['goal_type']] ?? 'Goal';
+               ?>
+               <div class="goal-item">
+                  <div class="goal-item-title"><?php echo htmlspecialchars($goal['title']); ?></div>
+                  <?php if (!empty($goal['description'])): ?>
+                     <div class="goal-item-desc"><?php echo nl2br(htmlspecialchars($goal['description'])); ?></div>
+                  <?php endif; ?>
+                  <div class="goal-item-meta"><?php echo htmlspecialchars($typeLabel); ?> &bull; <?php echo (int) $progress['current']; ?> / <?php echo (int) $progress['target']; ?></div>
+                  <div class="goal-progress-bar">
+                     <span style="width: <?php echo (int) $progress['percent']; ?>%;"></span>
+                  </div>
+                  <?php if (!empty($progress['next_needed'])): ?>
+                     <div class="goal-next-needed">Next: <?php echo htmlspecialchars($progress['next_needed']); ?></div>
+                  <?php endif; ?>
+                  <?php if (($goal['status'] ?? '') === 'pending_approval'): ?>
+                     <span class="goal-pending-pill">Waiting for approval</span>
+                  <?php endif; ?>
+               </div>
+            <?php endforeach; ?>
+         <?php endif; ?>
+      </div>
+      <!-- Week strip -->
+      <div class="week-strip-section">
+         <div class="week-strip-header">
+            <span class="week-strip-title">Today's Schedule</span>
+            <a class="week-strip-link" href="task.php">See All</a>
+         </div>
+         <div class="week-days" aria-label="Current week">
+            <?php foreach ($weekDates as $day): ?>
+               <button type="button" class="week-day<?php echo $day['date'] === $todayDate ? ' active' : ''; ?>" data-week-date="<?php echo htmlspecialchars($day['date']); ?>">
+                  <span class="week-day-name-initial"><?php echo htmlspecialchars(strtoupper(substr((string) $day['day'], 0, 1))); ?></span>
+                  <span class="week-day-num"><?php echo htmlspecialchars($day['num']); ?></span>
+               </button>
+            <?php endforeach; ?>
+         </div>
+         <div class="week-schedule" data-week-schedule></div>
       </div>
       <div class="dashboard-cards" aria-label="Quick links">
          <a class="dashboard-card" href="routine.php">
-            <i class="fa-solid fa-repeat"></i>Routines
+            <i class="fa-solid fa-repeat"></i><span>Routines</span>
             <?php if ($routineCount > 0): ?><span class="dashboard-card-count"><?php echo $routineCount; ?></span><?php endif; ?>
          </a>
          <a class="dashboard-card" href="task.php">
-            <i class="fa-solid fa-list-check"></i>Tasks
+            <i class="fa-solid fa-list-check"></i><span>Tasks</span>
             <?php if ($taskCount > 0): ?><span class="dashboard-card-count"><?php echo $taskCount; ?></span><?php endif; ?>
          </a>
          <a class="dashboard-card" href="goal.php">
-            <i class="fa-solid fa-bullseye"></i>Goals
+            <i class="fa-solid fa-bullseye"></i><span>Goals</span>
             <?php if ($goalCount > 0): ?><span class="dashboard-card-count"><?php echo $goalCount; ?></span><?php endif; ?>
          </a>
-        <a class="dashboard-card" href="rewards.php">
-            <i class="fa-solid fa-gift"></i>Rewards Shop
-        </a>
+         <a class="dashboard-card" href="rewards.php">
+            <i class="fa-solid fa-gift"></i><span>Rewards</span>
+         </a>
       </div>
       <div class="rewards-modal" data-rewards-modal id="rewards-modal">
          <div class="rewards-card" role="dialog" aria-modal="true" aria-labelledby="rewards-title">
