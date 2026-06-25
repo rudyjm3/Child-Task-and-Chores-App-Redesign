@@ -1848,6 +1848,48 @@ margin-bottom: 20px;}
         .routine-log-item { border: 1px solid #e3e7eb; border-radius: 10px; padding: 10px; display: grid; gap: 6px; background: #f9fbfd; }
         .routine-log-item .meta { color: #546e7a; font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 10px; }
         .routine-log-item .overtime { color: #c62828; font-weight: 700; }
+
+        /* ── Design System Overrides ─────────────────── */
+        body { background: var(--color-bg); }
+
+        /* Routine cards — purple accent */
+        .routine-card { border-color: var(--color-slate); border-radius: var(--radius-xl) !important; }
+        .routine-card header h3 { color: var(--color-text-dark); }
+        .routine-card-icon { background: var(--color-primary-light); color: var(--color-primary); }
+        .routine-card-points { color: var(--color-gold); background: var(--color-gold-light); }
+        .routine-card-chevron { color: var(--color-text-sec); }
+
+        /* Section toggle headers */
+        .task-section-toggle > summary:hover .task-section-title { color: var(--color-primary); }
+        .task-section-icon.is-active { background: var(--color-primary); }
+        .task-section-icon.is-pending { background: var(--color-gold); }
+        .task-section-icon.is-approved { background: var(--color-success); }
+
+        /* Routine list header */
+        .routine-list-title { color: var(--color-text-dark); }
+        .routine-list-subtitle strong { color: var(--color-primary); }
+
+        /* FAB */
+        .routine-create-fab,
+        .goal-create-button { background: var(--gradient-primary) !important; box-shadow: var(--shadow-fab); }
+
+        /* Buttons */
+        .button:not(.routine-primary-button):not(.start-next-button):not(.card-actions .button) { background: var(--color-primary); }
+        .button.secondary { background: var(--color-accent); }
+        .button.danger { background: var(--color-danger); }
+
+        /* Routine timeline (parent view) */
+        .timeline-entry { border-left-color: var(--color-primary-mid); }
+        .timeline-dot { background: var(--color-primary); }
+
+        /* Approval card */
+        .approval-card { border-left: 4px solid var(--color-warning); background: var(--color-white); }
+        .approve-btn { background: var(--color-success) !important; }
+        .reject-btn { background: var(--color-danger) !important; }
+
+        /* Nav calendar */
+        .week-day.active,
+        .week-days-header .week-day.is-today { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-white); }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>

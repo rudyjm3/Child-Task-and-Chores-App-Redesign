@@ -1001,6 +1001,59 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
             pointer-events: none;
         }
     .nav-link-button { background: transparent; border: none; cursor: pointer; }
+
+    /* ── Design System Overrides ─────────────────── */
+    body { background: var(--color-bg); }
+    .task-form { padding: 16px var(--mobile-pad); max-width: 100%; margin: 0; }
+    .task-list { padding: 0 var(--mobile-pad); max-width: 100%; margin: 0 auto calc(var(--nav-height) + 16px); }
+    .task-list-title { font-size: var(--text-2xl); color: var(--color-text-dark); }
+    .task-list-subtitle strong { color: var(--color-primary); }
+
+    /* Task card — purple accent */
+    .task-card { border-color: var(--color-slate); border-radius: var(--radius-xl); }
+    .task-card-icon { background: var(--color-primary-light); color: var(--color-primary); }
+    .task-card-title { color: var(--color-text-dark); }
+    .task-card-child-pill { background: var(--color-primary-light); color: var(--color-primary); }
+    .task-card-status { background: var(--color-warning-light); color: var(--color-warning-dark); }
+    .task-card-status.is-overdue { background: var(--color-danger-light); color: var(--color-danger-dark); }
+    .task-card-status.is-success { background: var(--color-success-light); color: var(--color-success-dark); }
+    .task-card-status.is-muted { background: var(--color-slate); color: var(--color-text-sec); }
+    .task-card-points { color: var(--color-gold); background: var(--color-gold-light); }
+    .task-card-points i { color: var(--color-gold); }
+    .task-card-body { border-top-color: var(--color-slate); }
+    .task-card-note { background: var(--color-bg); border-color: var(--color-slate); }
+    .task-card-primary.button { background: var(--color-primary); border-radius: var(--radius-full) !important; }
+
+    /* Filter row — purple chips */
+    .task-child-card.is-active img,
+    .task-child-card.is-active .task-child-icon { box-shadow: 0 0 0 4px rgba(109,40,217,0.35), 0 0 14px rgba(109,40,217,0.2); color: var(--color-primary); }
+    .task-filter-field select { border-color: var(--color-slate); border-radius: var(--radius-md); }
+    .task-filter-field select:focus { border-color: var(--color-primary); }
+
+    /* Section toggles — purple */
+    .task-section-toggle > summary:hover .task-section-title { color: var(--color-primary); }
+    .task-section-icon.is-active { background: var(--color-primary); }
+    .task-section-icon.is-pending { background: var(--color-gold); }
+    .task-section-icon.is-approved { background: var(--color-success); }
+    .task-section-icon.is-expired { background: var(--color-danger); }
+
+    /* Child view task card complete button */
+    .task-card-primary.complete-task-btn { background: var(--color-accent); }
+
+    /* Button overrides */
+    .button { background: var(--color-primary); }
+    .button.secondary { background: var(--color-accent); }
+    .button.danger { background: var(--color-danger); }
+
+    /* Repeat day checked */
+    .repeat-day input:checked + span { background: var(--color-primary); color: #fff; }
+
+    /* Task-form child select */
+    .child-select-card input[type="checkbox"]:checked + img { box-shadow: 0 0 0 4px rgba(109,40,217,0.4), 0 0 14px rgba(109,40,217,0.2); }
+    .child-select-card input[type="checkbox"]:checked + img + span { color: var(--color-primary); text-shadow: 0 1px 8px rgba(109,40,217,0.3); }
+
+    /* Toggle switch */
+    .toggle-switch input:checked + .toggle-slider { background: var(--color-primary); }
     </style>
     <script>
         const taskCalendarData = <?php echo json_encode($calendarTasks, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
