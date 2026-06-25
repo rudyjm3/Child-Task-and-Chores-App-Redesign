@@ -1,0 +1,59 @@
+/* css/shared.css - Shared styles for all app pages
+   Extracted from inline <style> blocks to eliminate duplication.
+   Loaded after main.css on all authenticated pages. */
+
+/* ── Page Header ───────────────────────────────────── */
+.page-header { padding: 18px 16px 12px; display: grid; gap: 12px; text-align: left; }
+.page-header-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.page-header-title { display: grid; gap: 6px; }
+.page-header-title h1 { margin: 0; font-size: 1.2rem; color: #2c2c2c; }
+.page-header-meta { margin: 0; color: #616161; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.8rem; font-weight: 600; }
+.page-header-actions { display: flex; gap: 10px; align-items: center; }
+.page-header-action { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #dfe8df; background: #fff; color: #6d6d6d; box-shadow: 0 6px 14px rgba(0,0,0,0.08); cursor: pointer; }
+.page-header-action i { font-size: 1.1rem; }
+.page-header-action:hover { color: #4caf50; border-color: #c8e6c9; }
+
+/* ── Desktop Navigation ────────────────────────────── */
+.nav-links { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; padding: 10px 12px; border-radius: 18px; background: #fff; border: 1px solid #eceff4; box-shadow: 0 8px 18px rgba(0,0,0,0.06); }
+.nav-link,
+.nav-mobile-link { flex: 1 1 90px; display: grid; justify-items: center; text-align: center; gap: 4px; text-decoration: none; color: #6d6d6d; font-weight: 600; font-size: 0.75rem; border-radius: 12px; padding: 6px 4px; line-height: 1.2; }
+.nav-link i,
+.nav-mobile-link i { font-size: 1.2rem; }
+.nav-link.is-active,
+.nav-mobile-link.is-active { color: #4caf50; }
+.nav-link.is-active i,
+.nav-mobile-link.is-active i { color: #4caf50; }
+.nav-link:hover,
+.nav-mobile-link:hover { color: #4caf50; }
+.nav-link-button { background: transparent; border: none; cursor: pointer; }
+
+/* ── Mobile Bottom Navigation ──────────────────────── */
+.nav-mobile-bottom { display: none; gap: 6px; padding: 10px 12px; border-top: 1px solid #e0e0e0; background: #fff; position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; }
+.nav-mobile-bottom .nav-mobile-link { flex: 1; }
+
+@media (max-width: 768px) {
+    .nav-links { display: none; }
+    .nav-mobile-bottom { display: flex; justify-content: space-between; }
+    body { padding-bottom: 72px; }
+    .page-header { padding-left: 0; padding-right: 0; }
+}
+
+/* ── Shared Form Styles ────────────────────────────── */
+.form-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group label { font-weight: 600; }
+.form-group input, .form-group select, .form-group textarea { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+
+/* ── Shared Button Styles ──────────────────────────── */
+.button { padding: 10px 20px; margin: 5px; background-color: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer; }
+.button.secondary { background: #619fd0; }
+.button.danger { background: #e53935; }
+
+/* ── Modal Utilities ───────────────────────────────── */
+.no-scroll { overflow: hidden; }
+body.modal-open { overflow: hidden; }
+
+/* ── Notification Badges ───────────────────────────── */
+.parent-notification-badge,
+.notification-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 999px; background: #e53935; color: #fff; font-size: 0.7rem; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px; }

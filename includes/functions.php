@@ -7,6 +7,10 @@
 
 require_once __DIR__ . '/db_connect.php';
 
+if (!defined('APP_VERSION')) {
+    define('APP_VERSION', '3.27.0');
+}
+
 // Return a consistent display name for a user
 function getDisplayName($user_id) {
     global $db;
@@ -611,14 +615,20 @@ function updateChildProfile($child_user_id, $first_name, $last_name, $birthday, 
 
 // Revised: getDashboardData (name display, caregiver access)
 function getDashboardData($user_id) {
+    $role = getUserRole($user_id) ?? 'unknown';
+    error_log("Fetching dashboard data for user_id=$user_id, role=$role");
+    if (in_array($role, ['main_parent', 'family_member', 'caregiver'])) {
+        return getParentDashboardData($user_id, $role);
+    } elseif ($role === 'child') {
+        return getChildDashboardData($user_id);
+    }
+    return [];
+}
+
+function getParentDashboardData($user_id, $role = 'main_parent') {
     global $db;
     $data = [];
 
-    // Normalize role (map legacy 'parent' -> 'main_parent')
-    $role = getUserRole($user_id) ?? 'unknown';
-    error_log("Fetching dashboard data for user_id=$user_id, role=$role");
-
-    // Build a unified branch for all parent-like roles
     if (in_array($role, ['main_parent', 'family_member', 'caregiver'])) {
         // Determine the main parent id for the current actor
         $main_parent_id = $user_id;
@@ -792,6 +802,30 @@ function getDashboardData($user_id) {
                 error_log("Failed to load point adjustments: " . $e->getMessage());
                 $adjustmentsByChild = [];
             }
+
+            // Star adjustments history (latest 10 per child)
+            try {
+                ensureChildStarAdjustmentsTable();
+                $starAdjStmt = $db->prepare("\n                    SELECT child_user_id, delta_stars, reason, created_at\n                    FROM child_star_adjustments\n                    WHERE child_user_id IN ($placeholders)\n                    ORDER BY created_at DESC\n                ");
+                $starAdjStmt->execute($childIds);
+                $starAdjustmentsByChild = [];
+                while ($row = $starAdjStmt->fetch(PDO::FETCH_ASSOC)) {
+                    $cid = (int)$row['child_user_id'];
+                    if (!isset($starAdjustmentsByChild[$cid])) {
+                        $starAdjustmentsByChild[$cid] = [];
+                    }
+                    if (count($starAdjustmentsByChild[$cid]) < 10) {
+                        $starAdjustmentsByChild[$cid][] = [
+                            'delta_stars' => (int)$row['delta_stars'],
+                            'reason' => $row['reason'],
+                            'created_at' => $row['created_at']
+                        ];
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("Failed to load star adjustments: " . $e->getMessage());
+                $starAdjustmentsByChild = [];
+            }
         }
 
         $maxChildPoints = max(100, $maxChildPoints);
@@ -813,6 +847,7 @@ function getDashboardData($user_id) {
             $child['goals_assigned'] = $childGoalStats['goal_count'];
             $child['rewards_claimed'] = $rewardsClaimed[$childId] ?? 0;
             $child['point_adjustments'] = $adjustmentsByChild[$childId] ?? [];
+            $child['star_adjustments'] = $starAdjustmentsByChild[$childId] ?? [];
             $streaks = getChildStreaks($childId, (int) $main_parent_id);
             $child['routine_streak'] = (int) ($streaks['routine_streak'] ?? 0);
             $child['task_streak'] = (int) ($streaks['task_streak'] ?? 0);
@@ -925,9 +960,14 @@ function getDashboardData($user_id) {
         $stmt->execute([':parent_id' => $main_parent_id]);
         $data['goals_met'] = (int)($stmt->fetchColumn() ?: 0);
 
-    } elseif ($role === 'child') {
-        // Fetch remaining_points from child_points
-        autoCloseExpiredGoals(null, $user_id);
+    }
+    return $data;
+}
+
+function getChildDashboardData($user_id) {
+    global $db;
+    $data = [];
+    autoCloseExpiredGoals(null, $user_id);
         $stmt = $db->prepare("SELECT total_points FROM child_points WHERE child_user_id = :child_id");
         $stmt->execute([':child_id' => $user_id]);
         $data['remaining_points'] = $stmt->fetchColumn() ?: 0;
@@ -1028,7 +1068,6 @@ function getDashboardData($user_id) {
         $data['notifications_new'] = array_values(array_filter($allNotes, static function ($n) { return empty($n['is_read']) && empty($n['deleted_at']); }));
         $data['notifications_read'] = array_values(array_filter($allNotes, static function ($n) { return !empty($n['is_read']) && empty($n['deleted_at']); }));
         $data['notifications_deleted'] = array_values(array_filter($allNotes, static function ($n) { return !empty($n['deleted_at']); }));
-    }
 
     return $data;
 }
@@ -1394,9 +1433,27 @@ function calculateRoutineTaskStars(int $scheduledSeconds, int $actualSeconds): i
     return 1;
 }
 
+
+
+function ensureChildStarAdjustmentsTable(): void {
+    global $db;
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS child_star_adjustments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            child_user_id INT NOT NULL,
+            delta_stars INT NOT NULL,
+            reason VARCHAR(255) NOT NULL,
+            created_by INT NOT NULL,
+            created_at DATETIME NOT NULL,
+            INDEX idx_child_created (child_user_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
 function getChildRollingStarsAverage(int $child_user_id, int $parent_user_id, int $weeks = 4): float {
     global $db;
     ensureRoutineCompletionTables();
+    ensureChildStarAdjustmentsTable();
     $weeks = max(1, $weeks);
     $today = new DateTimeImmutable('today');
     $startOfWeek = $today->modify('monday this week');
@@ -1412,6 +1469,13 @@ function getChildRollingStarsAverage(int $child_user_id, int $parent_user_id, in
           AND rcl.completed_at >= :week_start
           AND rcl.completed_at <= :week_end
     ");
+    $adjustmentStmt = $db->prepare("
+        SELECT SUM(delta_stars)
+        FROM child_star_adjustments
+        WHERE child_user_id = :child_id
+          AND created_at >= :week_start
+          AND created_at <= :week_end
+    ");
 
     for ($i = 0; $i < $weeks; $i++) {
         $weekStart = $startOfWeek->modify("-{$i} week");
@@ -1423,6 +1487,12 @@ function getChildRollingStarsAverage(int $child_user_id, int $parent_user_id, in
             ':week_end' => $weekEnd->format('Y-m-d H:i:s')
         ]);
         $stars = (int) ($stmt->fetchColumn() ?: 0);
+        $adjustmentStmt->execute([
+            ':child_id' => $child_user_id,
+            ':week_start' => $weekStart->format('Y-m-d H:i:s'),
+            ':week_end' => $weekEnd->format('Y-m-d H:i:s')
+        ]);
+        $stars += (int) ($adjustmentStmt->fetchColumn() ?: 0);
         $totalStars += $stars;
         $weekCount++;
     }
@@ -1430,7 +1500,9 @@ function getChildRollingStarsAverage(int $child_user_id, int $parent_user_id, in
     if ($weekCount === 0) {
         return 0.0;
     }
-    return $totalStars / $weekCount;
+    // Levels should reflect the actual stars earned/adjusted in the window,
+    // not a per-week average that dilutes each star adjustment.
+    return (float) $totalStars;
 }
 
 function updateChildLevelState(int $child_user_id, int $parent_user_id, bool $triggerCelebration = false): array {
@@ -1583,6 +1655,122 @@ function logRoutineCompletionSession($routine_id, $child_id, $parent_id, $comple
         error_log("Failed to log routine completion for routine $routine_id: " . $e->getMessage());
         return false;
     }
+}
+
+// Mark a routine as manually completed by a parent, awarding points and logging the session.
+// Returns a message array: ['type' => 'error'|'success', 'text' => string]
+function completeRoutineAsParent(int $routine_id, array $selected, array $completed_at_map, bool $grant_bonus, int $family_root_id): array {
+    global $db;
+
+    if (!routineBelongsToParent($routine_id, $family_root_id)) {
+        return ['type' => 'error', 'text' => 'Unable to complete routine for this child.'];
+    }
+    $routineData = getRoutineWithTasks($routine_id);
+    if (!$routineData) {
+        return ['type' => 'error', 'text' => 'Routine could not be loaded.'];
+    }
+    $childId = (int) ($routineData['child_user_id'] ?? 0);
+    $todayDate = date('Y-m-d');
+    if ($childId > 0) {
+        ensureRoutinePointsLogsTable();
+        $logStmt = $db->prepare("SELECT created_at FROM routine_points_logs WHERE routine_id = :routine_id AND child_user_id = :child_id AND DATE(created_at) = :today ORDER BY created_at DESC LIMIT 1");
+        $logStmt->execute([':routine_id' => $routine_id, ':child_id' => $childId, ':today' => $todayDate]);
+        $lastCompletion = $logStmt->fetchColumn();
+        if ($lastCompletion) {
+            return ['type' => 'error', 'text' => 'Routine already completed today at ' . date('m/d/Y h:i A', strtotime($lastCompletion)) . '.'];
+        }
+    }
+    $tasks = $routineData['tasks'] ?? [];
+    $taskMap = [];
+    $completedTodayMap = [];
+    foreach ($tasks as $task) {
+        $taskId = (int) $task['id'];
+        $taskMap[$taskId] = $task;
+        $completedAt = $task['completed_at'] ?? null;
+        $completedToday = !empty($completedAt)
+            && ($task['status'] ?? 'pending') === 'completed'
+            && date('Y-m-d', strtotime($completedAt)) === $todayDate;
+        $completedTodayMap[$taskId] = $completedToday;
+    }
+    $selected = array_values(array_unique(array_filter($selected, static function ($id) use ($taskMap) {
+        return isset($taskMap[$id]);
+    })));
+    $awardedPoints = 0;
+    $completionTimestampMap = [];
+    foreach ($tasks as $task) {
+        $taskId = (int) $task['id'];
+        $isSelected = in_array($taskId, $selected, true);
+        $completedAtValue = null;
+        if ($isSelected) {
+            if (!empty($completedTodayMap[$taskId]) && !empty($taskMap[$taskId]['completed_at'])) {
+                $completedAtValue = $taskMap[$taskId]['completed_at'];
+            } elseif (!empty($completed_at_map[$taskId])) {
+                $completedAtValue = date('Y-m-d H:i:s', (int) floor($completed_at_map[$taskId] / 1000));
+            } else {
+                $completedAtValue = date('Y-m-d H:i:s');
+            }
+            $completionTimestampMap[$taskId] = $completedAtValue;
+            if (empty($completedTodayMap[$taskId])) {
+                $awardedPoints += max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0));
+            }
+        }
+        setRoutineTaskStatus($routine_id, $taskId, $isSelected ? 'completed' : 'pending', $completedAtValue);
+    }
+    if ($awardedPoints > 0 && $childId > 0) {
+        updateChildPoints($childId, $awardedPoints);
+    }
+    $bonusAwarded = 0;
+    if ($childId > 0) {
+        $bonusAwarded = completeRoutine($routine_id, $childId, $grant_bonus);
+    }
+    if ($childId > 0 && ($awardedPoints > 0 || $bonusAwarded > 0)) {
+        logRoutinePointsAward($routine_id, $childId, $awardedPoints, $bonusAwarded);
+        $parentIdForLog = (int) ($routineData['parent_user_id'] ?? 0);
+        if ($parentIdForLog > 0) {
+            $parentStartedAt = null;
+            $parentCompletedAt = null;
+            if (!empty($completionTimestampMap)) {
+                $timestamps = array_filter(array_map('strtotime', $completionTimestampMap), static fn($v) => $v !== false);
+                if (!empty($timestamps)) {
+                    $parentStartedAt = date('Y-m-d H:i:s', min($timestamps));
+                    $parentCompletedAt = date('Y-m-d H:i:s', max($timestamps));
+                }
+            }
+            $completionTasks = [];
+            foreach ($tasks as $task) {
+                $taskId = (int) ($task['id'] ?? 0);
+                if (!in_array($taskId, $selected, true)) {
+                    continue;
+                }
+                $completionTasks[] = [
+                    'routine_task_id' => $taskId,
+                    'sequence_order'  => (int) ($task['sequence_order'] ?? 0),
+                    'completed_at'    => $completionTimestampMap[$taskId] ?? null,
+                    'scheduled_seconds'    => null,
+                    'actual_seconds'       => null,
+                    'status_screen_seconds' => 0,
+                    'stars_awarded'        => 0
+                ];
+            }
+            logRoutineCompletionSession($routine_id, $childId, $parentIdForLog, 'parent', $parentStartedAt, $parentCompletedAt, $completionTasks);
+            updateChildLevelState($childId, $parentIdForLog, true);
+        }
+    }
+    $summaryParts = [];
+    if ($awardedPoints > 0) {
+        $summaryParts[] = "{$awardedPoints} routine points applied";
+    }
+    if ($grant_bonus && $bonusAwarded > 0) {
+        $summaryParts[] = "{$bonusAwarded} bonus points added";
+    } elseif ($grant_bonus && $bonusAwarded === 0 && (int) ($routineData['bonus_points'] ?? 0) > 0) {
+        $summaryParts[] = 'Bonus points not available outside the routine window';
+    } elseif (!$grant_bonus && (int) ($routineData['bonus_points'] ?? 0) > 0) {
+        $summaryParts[] = 'Bonus points not granted';
+    }
+    if (empty($summaryParts)) {
+        $summaryParts[] = 'No points were awarded';
+    }
+    return ['type' => 'success', 'text' => 'Routine updated manually: ' . implode('. ', $summaryParts) . '.'];
 }
 
 // Approve a task
@@ -1759,15 +1947,17 @@ function deleteReward($parent_user_id, $reward_id) {
 }
 
 // Reward library helpers
-function createRewardTemplate($parent_user_id, $title, $description, $point_cost, $level_required = 1, $creator_user_id = null) {
+function createRewardTemplate($parent_user_id, $title, $description, $point_cost, $level_required = 1, $creator_user_id = null, $icon_class = null, $icon_color = null) {
     global $db;
-    $stmt = $db->prepare("INSERT INTO reward_templates (parent_user_id, title, description, point_cost, level_required, created_by) VALUES (:parent_id, :title, :description, :point_cost, :level_required, :created_by)");
+    $stmt = $db->prepare("INSERT INTO reward_templates (parent_user_id, title, description, point_cost, level_required, icon_class, icon_color, created_by) VALUES (:parent_id, :title, :description, :point_cost, :level_required, :icon_class, :icon_color, :created_by)");
     $success = $stmt->execute([
         ':parent_id' => $parent_user_id,
         ':title' => trim((string)$title),
         ':description' => trim((string)$description),
         ':point_cost' => max(1, (int)$point_cost),
         ':level_required' => max(1, (int)$level_required),
+        ':icon_class' => $icon_class,
+        ':icon_color' => $icon_color,
         ':created_by' => $creator_user_id ?: $parent_user_id
     ]);
     return $success ? (int) $db->lastInsertId() : false;
@@ -1783,7 +1973,7 @@ function deleteRewardTemplate($parent_user_id, $template_id) {
     return $stmt->rowCount() > 0;
 }
 
-function updateRewardTemplate($parent_user_id, $template_id, $title, $description, $point_cost, $level_required = 1) {
+function updateRewardTemplate($parent_user_id, $template_id, $title, $description, $point_cost, $level_required = 1, $icon_class = null, $icon_color = null) {
     global $db;
     $title = trim((string)$title);
     $description = trim((string)$description);
@@ -1793,13 +1983,17 @@ function updateRewardTemplate($parent_user_id, $template_id, $title, $descriptio
                           SET title = :title,
                               description = :description,
                               point_cost = :point_cost,
-                              level_required = :level_required
+                              level_required = :level_required,
+                              icon_class = :icon_class,
+                              icon_color = :icon_color
                           WHERE id = :template_id AND parent_user_id = :parent_id");
     $stmt->execute([
         ':title' => $title,
         ':description' => $description,
         ':point_cost' => $point_cost,
         ':level_required' => $level_required,
+        ':icon_class' => $icon_class,
+        ':icon_color' => $icon_color,
         ':template_id' => $template_id,
         ':parent_id' => $parent_user_id
     ]);
@@ -1813,7 +2007,7 @@ function duplicateRewardTemplate($parent_user_id, $template_id, $creator_user_id
         return 0;
     }
 
-    $fetch = $db->prepare("SELECT title, description, point_cost, level_required
+    $fetch = $db->prepare("SELECT title, description, point_cost, level_required, icon_class, icon_color
                            FROM reward_templates
                            WHERE id = :template_id AND parent_user_id = :parent_id");
     $fetch->execute([
@@ -1826,14 +2020,16 @@ function duplicateRewardTemplate($parent_user_id, $template_id, $creator_user_id
     }
 
     $newTitle = 'Copy of ' . ($template['title'] ?? 'Reward');
-    $insert = $db->prepare("INSERT INTO reward_templates (parent_user_id, title, description, point_cost, level_required, created_by)
-                            VALUES (:parent_id, :title, :description, :point_cost, :level_required, :created_by)");
+    $insert = $db->prepare("INSERT INTO reward_templates (parent_user_id, title, description, point_cost, level_required, icon_class, icon_color, created_by)
+                            VALUES (:parent_id, :title, :description, :point_cost, :level_required, :icon_class, :icon_color, :created_by)");
     $ok = $insert->execute([
         ':parent_id' => (int) $parent_user_id,
         ':title' => $newTitle,
         ':description' => $template['description'] ?? '',
         ':point_cost' => (int) ($template['point_cost'] ?? 1),
         ':level_required' => max(1, (int) ($template['level_required'] ?? 1)),
+        ':icon_class' => $template['icon_class'] ?? null,
+        ':icon_color' => $template['icon_color'] ?? null,
         ':created_by' => $creator_user_id ?? $parent_user_id
     ]);
     if (!$ok) {
@@ -1862,7 +2058,7 @@ function duplicateRewardTemplate($parent_user_id, $template_id, $creator_user_id
 
 function getRewardTemplates($parent_user_id) {
     global $db;
-    $stmt = $db->prepare("SELECT id, title, description, point_cost, level_required, created_at FROM reward_templates WHERE parent_user_id = :parent_id ORDER BY created_at DESC");
+    $stmt = $db->prepare("SELECT id, title, description, point_cost, level_required, icon_class, icon_color, created_at FROM reward_templates WHERE parent_user_id = :parent_id ORDER BY created_at DESC");
     $stmt->execute([':parent_id' => $parent_user_id]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
@@ -3863,6 +4059,55 @@ function getChildTotalPoints($child_id) {
     }
 }
 
+// Manually adjust a child's point balance, log the adjustment, and notify the child.
+// Returns a human-readable result message.
+function adjustChildPoints(int $child_id, int $delta, string $reason, int $created_by): string {
+    global $db;
+    $reason = $reason !== '' ? substr($reason, 0, 255) : 'Manual adjustment';
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS child_point_adjustments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            child_user_id INT NOT NULL,
+            delta_points INT NOT NULL,
+            reason VARCHAR(255) NOT NULL,
+            created_by INT NOT NULL,
+            created_at DATETIME NOT NULL,
+            INDEX idx_child_created (child_user_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    updateChildPoints($child_id, $delta);
+    $stmt = $db->prepare("INSERT INTO child_point_adjustments (child_user_id, delta_points, reason, created_by, created_at) VALUES (:child_id, :delta, :reason, :created_by, NOW())");
+    $stmt->execute([':child_id' => $child_id, ':delta' => $delta, ':reason' => $reason, ':created_by' => $created_by]);
+    addChildNotification(
+        $child_id,
+        $delta > 0 ? 'points_added' : 'points_deducted',
+        ($delta > 0 ? 'You received ' : 'You lost ') . abs($delta) . ' points: ' . $reason,
+        'dashboard_child.php'
+    );
+    $sign = $delta > 0 ? 'added' : 'deducted';
+    return ucfirst($sign) . ' ' . abs($delta) . ' points. Reason: ' . htmlspecialchars($reason);
+}
+
+// Manually adjust a child's star balance, log the adjustment, and notify the child.
+// Returns a human-readable result message including the child's current level.
+function adjustChildStars(int $child_id, int $delta, string $reason, int $created_by, int $main_parent_id): string {
+    global $db;
+    $reason = $reason !== '' ? substr($reason, 0, 255) : 'Manual star adjustment';
+    ensureChildStarAdjustmentsTable();
+    $stmt = $db->prepare("INSERT INTO child_star_adjustments (child_user_id, delta_stars, reason, created_by, created_at) VALUES (:child_id, :delta, :reason, :created_by, NOW())");
+    $stmt->execute([':child_id' => $child_id, ':delta' => $delta, ':reason' => $reason, ':created_by' => $created_by]);
+    $levelState = getChildLevelState($child_id, $main_parent_id);
+    addChildNotification(
+        $child_id,
+        $delta > 0 ? 'stars_added' : 'stars_deducted',
+        ($delta > 0 ? 'You received ' : 'You lost ') . abs($delta) . ' stars: ' . $reason,
+        'dashboard_child.php'
+    );
+    $sign = $delta > 0 ? 'added' : 'deducted';
+    return ucfirst($sign) . ' ' . abs($delta) . ' stars. Reason: ' . htmlspecialchars($reason)
+        . ' Current level: ' . (int) ($levelState['level'] ?? 1) . '.';
+}
+
 // **[Revised] Routine Functions (now use routine_task_id instead of task_id) **
 function createRoutine($parent_user_id, $child_user_id, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day = 'anytime', $recurrence_days = null, $routine_date = null, $creator_user_id = null) {
     global $db;
@@ -4225,6 +4470,7 @@ try {
    // Add soft-delete tracking columns for children
    $db->exec("ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS deleted_at DATETIME DEFAULT NULL");
    $db->exec("ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS deleted_by INT DEFAULT NULL");
+   $db->exec("ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS rewards_shop_open TINYINT(1) NOT NULL DEFAULT 1");
    try {
        $db->exec("CREATE INDEX IF NOT EXISTS idx_child_profiles_deleted ON child_profiles(parent_user_id, deleted_at)");
    } catch (PDOException $e) {
@@ -4316,6 +4562,8 @@ try {
       description TEXT,
       point_cost INT NOT NULL,
       level_required INT NOT NULL DEFAULT 1,
+      icon_class VARCHAR(64) DEFAULT NULL,
+      icon_color VARCHAR(16) DEFAULT NULL,
       created_by INT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (parent_user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -4324,6 +4572,8 @@ try {
    $db->exec($sql);
    error_log("Created/verified reward_templates table successfully");
    $db->exec("ALTER TABLE reward_templates ADD COLUMN IF NOT EXISTS level_required INT NOT NULL DEFAULT 1");
+   $db->exec("ALTER TABLE reward_templates ADD COLUMN IF NOT EXISTS icon_class VARCHAR(64) NULL");
+   $db->exec("ALTER TABLE reward_templates ADD COLUMN IF NOT EXISTS icon_color VARCHAR(16) NULL");
 
    // Create rewards table if not exists (added created_by)
    $sql = "CREATE TABLE IF NOT EXISTS rewards (
@@ -4686,7 +4936,6 @@ $sql = "ALTER TABLE child_profiles
 $db->exec($sql);
 
 ?>
-
 
 
 

@@ -1,3 +1,7 @@
+# Environment files
+.env
+.env.*
+
 docs/Adaptive Time Warnings .rtf
 images/background_images/cartoon-attic-interior-cozy-boy-bedroom-with-bed-chair-workspace-with-computer/boys_bedroom_background.eps
 sounds/backgroundMusic/cute-sound-for-videos-397053.mp3

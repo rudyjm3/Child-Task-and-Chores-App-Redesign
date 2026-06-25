@@ -9,9 +9,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Set logout message with username
+// Capture logout message before destroying session
 $username = $_SESSION['username'] ?? 'Unknown User';
-$_SESSION['logout_message'] = "User: $username has successfully been logged out";
+$logout_message = "User: $username has successfully been logged out";
 
 // Unset all session variables
 $_SESSION = array();
@@ -24,20 +24,16 @@ session_destroy();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7c3aed">
     <title>Logging Out</title>
     <script>
         // Display popup and redirect after user acknowledges
         window.onload = function() {
-            alert('<?php echo addslashes($_SESSION['logout_message'] ?? 'User has successfully been logged out'); ?>');
+            alert('<?php echo addslashes($logout_message); ?>');
             window.location.href = 'index.php';
         };
     </script>
 </head>
 <body>
-    <!-- Body is empty as the script handles the action -->
-  <script src="js/number-stepper.js" defer></script>
 </body>
 </html>
-
-
-
