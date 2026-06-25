@@ -1195,6 +1195,43 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
         }
         .no-scroll { overflow: hidden; }
         .nav-link-button { background: transparent; border: none; cursor: pointer; }
+
+        /* ── Design System Overrides ─────────────────── */
+        body { background: var(--color-bg); }
+        .goal-list { padding: 0 var(--mobile-pad); max-width: 100%; margin: 0 auto calc(var(--nav-height) + 16px); }
+        .goal-actions { max-width: 100%; padding: 12px var(--mobile-pad) 0; margin: 0 0 8px; }
+        .goal-actions h2 { font-size: var(--text-lg); font-weight: 700; color: var(--color-text-dark); }
+
+        /* FAB — purple */
+        .goal-create-button { background: var(--gradient-primary); box-shadow: var(--shadow-fab); }
+        .goal-create-button:hover { opacity: 0.92; background: var(--gradient-primary); }
+
+        /* Goal card — white with purple border */
+        .goal-card { background: var(--color-white); border: 1.5px solid var(--color-slate); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); }
+        .goal-card-title-text { color: var(--color-text-dark); }
+        .goal-card-header { border-bottom: 1px solid var(--color-slate); padding-bottom: 8px; margin-bottom: 10px; }
+
+        /* Child view goal card — purple instead of blue */
+        .child-view .goal-card { background: var(--color-white); border: 1.5px solid var(--color-primary-mid); font-size: 1em; }
+
+        /* Rejected goal card */
+        .rejected-card { border-left: 4px solid var(--color-danger); background: var(--color-danger-light); }
+
+        /* Status badges — use design tokens */
+        .goal-status-pill { font-size: var(--text-xs); padding: 3px 10px; border-radius: var(--radius-full); font-weight: 700; }
+        .goal-status-pill.active { background: var(--color-primary-light); color: var(--color-primary); }
+        .goal-status-pill.completed { background: var(--color-success-light); color: var(--color-success-dark); }
+        .goal-status-pill.pending_approval { background: var(--color-warning-light); color: var(--color-warning-dark); }
+        .goal-status-pill.rejected { background: var(--color-danger-light); color: var(--color-danger-dark); }
+
+        /* Goal progress bar — purple gradient */
+        .goal-progress { height: 8px; border-radius: var(--radius-full); background: var(--color-slate); overflow: hidden; margin: 8px 0; }
+        .goal-progress-fill { height: 100%; border-radius: inherit; background: var(--gradient-primary); transition: width 300ms ease; }
+
+        /* Buttons */
+        .button { background: var(--color-primary); border-radius: var(--radius-md); }
+        .button.secondary { background: var(--color-accent); }
+        .button.danger { background: var(--color-danger); }
     </style>
 </head>
 <body<?php echo !empty($bodyClasses) ? ' class="' . implode(' ', $bodyClasses) . '"' : ''; ?>>
