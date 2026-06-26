@@ -301,23 +301,14 @@ function renderStreakCheckSvg($suffix) {
         .hero-card__stat { align-items: center; }
 
         /* ── Week Strip ── */
-        .week-strip-section { background: var(--color-white); box-shadow: var(--shadow-header); margin-top: 12px; padding: 12px var(--mobile-pad) 0; }
-        .week-strip-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-        .week-strip-title { font-size: var(--text-md); font-weight: 700; color: var(--color-text-dark); }
-        .week-strip-link { font-size: var(--text-sm); font-weight: 600; color: var(--color-accent); text-decoration: none; }
-        .week-days { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
-        .week-days::-webkit-scrollbar { display: none; }
-        .week-day { flex: 1; min-width: 38px; display: flex; flex-direction: column; align-items: center; padding: 8px 0 4px; border-radius: 14px; background: transparent; border: none; cursor: pointer; gap: 1px; }
-        .week-day.active { background: var(--color-primary); }
-        .week-day-name-full { display: none; }
-        .week-day-name-initial { font-size: 11px; font-weight: 400; color: var(--color-text-sec); }
-        .week-day.active .week-day-name-initial { color: var(--color-white); font-weight: 600; }
-        .week-day-num { font-size: 17px; font-weight: 700; color: var(--color-text-dark); }
-        .week-day.active .week-day-num { color: var(--color-white); }
-        .week-schedule { margin-top: 8px; display: grid; gap: 8px; padding-bottom: 12px; }
-        .week-section { display: grid; gap: 6px; }
-        .week-section-title { font-size: var(--text-sm); font-weight: 600; color: var(--color-text-sec); text-transform: uppercase; letter-spacing: 0.05em; }
-        .week-section-list { display: grid; gap: 6px; }
+        .week-strip-section { background: var(--color-white); box-shadow: var(--shadow-header); margin-top: 12px; padding: 8px var(--mobile-pad) 0; }
+        /* Override components.css .week-strip to fit inside the section wrapper */
+        .week-strip-section .week-strip { padding: 0; box-shadow: none; gap: 4px; }
+        .week-strip-section .week-day { border: none; cursor: pointer; }
+        /* Section header for Today's Schedule */
+        .section-header { display: flex; align-items: center; justify-content: space-between; }
+        .section-title { font-size: var(--text-xl); font-weight: 700; color: var(--color-text-dark); }
+        .section-link { font-size: var(--text-base); font-weight: 600; color: var(--color-accent); text-decoration: none; }
         .week-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--color-white); border: 1px solid var(--color-slate); border-radius: var(--radius-lg); padding: 10px 12px; text-decoration: none; color: inherit; cursor: pointer; box-shadow: var(--shadow-chip); }
         .week-item:hover { background: var(--color-primary-light); border-color: var(--color-primary-mid); }
         .week-item-main { display: flex; align-items: center; gap: 10px; }
@@ -626,49 +617,63 @@ function renderStreakCheckSvg($suffix) {
                     scheduleTarget.innerHTML = '<div class="week-item"><div class="week-item-main"><i class="fa-solid fa-calendar-day week-item-icon"></i><div><div class="week-item-title">Nothing scheduled</div><div class="week-item-meta">Check back later</div></div></div></div>';
                     return;
                 }
+                const stripColors = {
+                    'fa-solid fa-repeat':     'var(--color-cat-routine)',
+                    'fa-solid fa-list-check': 'var(--color-primary)',
+                    'fa-solid fa-bullseye':   'var(--color-cat-learning)',
+                };
                 const sections = [
-                    { key: 'anytime', label: 'Due Today' },
-                    { key: 'morning', label: 'Morning' },
+                    { key: 'anytime',   label: 'Due Today' },
+                    { key: 'morning',   label: 'Morning' },
                     { key: 'afternoon', label: 'Afternoon' },
-                    { key: 'evening', label: 'Evening' }
+                    { key: 'evening',   label: 'Evening' }
                 ];
                 const buildItem = (item) => {
-                    let badge = '';
-                      if (item.completed && item.overdue) {
-                        badge = '<span class="week-item-badge-group"><span class="week-item-badge compact" title="Done"><i class="fa-solid fa-check"></i></span><span class="week-item-badge overdue compact" title="Overdue"><i class="fa-solid fa-triangle-exclamation"></i></span></span>';
-                      } else if (item.completed) {
-                        badge = '<span class="week-item-badge" title="Done"><i class="fa-solid fa-check"></i>Done</span>';
-                      } else if (item.overdue) {
-                        badge = '<span class="week-item-badge overdue" title="Overdue"><i class="fa-solid fa-triangle-exclamation"></i>Overdue</span>';
-                      }
-                    const wrapperStart = item.link
-                        ? '<a class="week-item" href="' + item.link + '">'
-                        : '<div class="week-item">';
-                    const wrapperEnd = item.link ? '</a>' : '</div>';
-                    return wrapperStart +
-                        '<div class="week-item-main">' +
-                        '<i class="' + item.icon + ' week-item-icon"></i>' +
-                        '<div>' +
-                        '<div class="week-item-title">' + item.title + badge + '</div>' +
-                        '<div class="week-item-meta">' + item.time_label + '</div>' +
+                    const color = stripColors[item.icon] || 'var(--color-primary)';
+                    let actionHtml = '';
+                    if (item.completed && item.overdue) {
+                        actionHtml = '<span class="btn-complete-check" title="Done (late)"><i class="fa-solid fa-check"></i></span>';
+                    } else if (item.completed) {
+                        actionHtml = '<span class="btn-complete-check"><i class="fa-solid fa-check"></i></span>';
+                    } else if (item.overdue) {
+                        actionHtml = '<a href="' + item.link + '" class="btn-complete" style="background:var(--color-danger);">Overdue!</a>';
+                    } else {
+                        actionHtml = '<a href="' + item.link + '" class="btn-complete">Complete!</a>';
+                    }
+                    const doneClass = item.completed ? ' child-task-card--done' : '';
+                    return '<div class="child-task-card' + doneClass + '">' +
+                        '<span class="child-task-card__strip" style="background:' + color + '"></span>' +
+                        '<span class="child-task-card__icon" style="background:' + color + '"></span>' +
+                        '<div class="child-task-card__body">' +
+                        '<div class="child-task-card__title">' + item.title + '</div>' +
+                        '<div class="child-task-card__sub">' + item.type + (item.time_label ? ' · ' + item.time_label : '') + '</div>' +
                         '</div>' +
+                        '<div class="child-task-card__right">' +
+                        '<span class="pts-badge">' + item.points + ' pts</span>' +
+                        actionHtml +
                         '</div>' +
-                        '<div class="week-item-points"><i class="fa-solid fa-coins"></i> ' + item.points + '</div>' +
-                        wrapperEnd;
+                        '</div>';
                 };
                 const sectionHtml = sections.map(section => {
                     const sectionItems = items.filter(item => item.time_of_day === section.key);
                     if (!sectionItems.length) return '';
-                    return '<div class="week-section">' +
-                        '<div class="week-section-title">' + section.label + '</div>' +
-                        '<div class="week-section-list">' + sectionItems.map(buildItem).join('') + '</div>' +
+                    return '<div class="task-group">' +
+                        '<div class="task-group__label">' + section.label + '</div>' +
+                        '<div class="card-list">' + sectionItems.map(buildItem).join('') + '</div>' +
                         '</div>';
                 }).join('');
-                scheduleTarget.innerHTML = sectionHtml || '<div class="week-item"><div class="week-item-main"><i class="fa-solid fa-calendar-day week-item-icon"></i><div><div class="week-item-title">Nothing scheduled</div><div class="week-item-meta">Check back later</div></div></div></div>';
+                scheduleTarget.innerHTML = sectionHtml ||
+                    '<div class="empty-state">' +
+                    '<span class="empty-state__icon"><i class="fa-solid fa-calendar-day"></i></span>' +
+                    '<p class="empty-state__message">Nothing scheduled — enjoy your day!</p>' +
+                    '</div>';
             };
 
             const setActiveDay = (dateKey) => {
-                dayButtons.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-week-date') === dateKey));
+                dayButtons.forEach(btn => {
+                    const isTarget = btn.getAttribute('data-week-date') === dateKey;
+                    btn.classList.toggle('week-day--today', isTarget);
+                });
                 renderSchedule(dateKey);
             };
 
@@ -754,20 +759,23 @@ function renderStreakCheckSvg($suffix) {
     ?>
     <header class="child-header">
       <div class="child-header__inner">
+        <?php
+          $headerHour = (int)date('H');
+          $headerGreeting = $headerHour < 12 ? 'Good Morning!' : ($headerHour < 17 ? 'Good Afternoon!' : 'Good Evening!');
+          $headerSessionName = trim((string)($_SESSION['name'] ?? ($_SESSION['username'] ?? '')));
+          $headerFirstName = $headerSessionName !== '' ? explode(' ', $headerSessionName)[0] : '';
+        ?>
         <div class="child-header__titles">
-          <span class="child-header__greeting">Welcome back</span>
-          <span class="child-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username']); ?></span>
+          <span class="child-header__greeting"><?php echo htmlspecialchars($headerGreeting); ?></span>
+          <span class="child-header__name"><?php echo htmlspecialchars($headerFirstName !== '' ? $headerFirstName . "'s Dashboard" : 'Dashboard'); ?></span>
         </div>
         <div class="child-header__actions">
-          <button type="button" class="page-header-action notification-trigger" data-child-notify-trigger aria-label="Notifications">
+          <button type="button" class="page-header-action notification-trigger" data-child-notify-trigger aria-label="Notifications" style="position:relative;">
             <i class="fa-solid fa-bell"></i>
             <?php if ($notificationCount > 0): ?>
               <span class="notification-badge"><?php echo (int)$notificationCount; ?></span>
             <?php endif; ?>
           </button>
-          <a class="page-header-action" href="logout.php" aria-label="Logout">
-            <i class="fa-solid fa-right-from-bracket"></i>
-          </a>
         </div>
       </div>
       <nav class="nav-links" aria-label="Primary">
@@ -1284,7 +1292,7 @@ foreach ($taskCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
          $levelProgressPercent = min(100, max(0, (int) ($data['level_progress_percent'] ?? 0)));
       ?>
       <!-- Hero Card -->
-      <div class="hero-card">
+      <div class="hero-card" style="margin: 12px var(--mobile-pad) 0;">
          <div class="hero-card__inner">
             <div class="hero-card__avatar">
                <img src="<?php echo htmlspecialchars($childAvatar); ?>" alt="<?php echo htmlspecialchars($childFirstName !== '' ? $childFirstName : 'Child'); ?>">
@@ -1326,7 +1334,26 @@ foreach ($taskCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
          </div>
       </div>
 
-      <!-- Streak section -->
+      <!-- Week strip + Today's Schedule -->
+      <div class="week-strip-section">
+         <div class="week-strip" aria-label="Current week">
+            <?php foreach ($weekDates as $day):
+               $isToday = $day['date'] === $todayDate;
+            ?>
+               <button type="button" class="week-day<?php echo $isToday ? ' week-day--today' : ''; ?>" data-week-date="<?php echo htmlspecialchars($day['date']); ?>">
+                  <span class="week-day__letter"><?php echo htmlspecialchars(strtoupper(substr((string) $day['day'], 0, 1))); ?></span>
+                  <span class="week-day__number"><?php echo htmlspecialchars($day['num']); ?></span>
+                  <span class="week-day__dot"></span>
+               </button>
+            <?php endforeach; ?>
+         </div>
+         <div class="section-header" style="padding: 16px var(--mobile-pad) 8px;">
+            <span class="section-title">Today's Schedule</span>
+            <a class="section-link" href="task.php">See All</a>
+         </div>
+         <div class="week-schedule" data-week-schedule style="padding: 0 var(--mobile-pad) 16px; display:grid; gap: var(--card-gap);"></div>
+      </div>
+      <!-- Streak section (below schedule) -->
       <?php
          $streakDayLabels = [];
          $streakDates = [];
@@ -1408,8 +1435,8 @@ foreach ($taskCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
          </div>
       </div>
       <?php endif; ?>
-      <!-- Goal summary -->
-      <div class="goal-summary">
+      <!-- Goal summary (below schedule) -->
+      <div class="goal-summary" style="margin: 0 var(--mobile-pad);">
          <div class="goal-summary-header">
             <h3 class="goal-summary-title">Goals</h3>
             <a class="goal-summary-link" href="goal.php">View</a>
@@ -1448,39 +1475,6 @@ foreach ($taskCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                </div>
             <?php endforeach; ?>
          <?php endif; ?>
-      </div>
-      <!-- Week strip -->
-      <div class="week-strip-section">
-         <div class="week-strip-header">
-            <span class="week-strip-title">Today's Schedule</span>
-            <a class="week-strip-link" href="task.php">See All</a>
-         </div>
-         <div class="week-days" aria-label="Current week">
-            <?php foreach ($weekDates as $day): ?>
-               <button type="button" class="week-day<?php echo $day['date'] === $todayDate ? ' active' : ''; ?>" data-week-date="<?php echo htmlspecialchars($day['date']); ?>">
-                  <span class="week-day-name-initial"><?php echo htmlspecialchars(strtoupper(substr((string) $day['day'], 0, 1))); ?></span>
-                  <span class="week-day-num"><?php echo htmlspecialchars($day['num']); ?></span>
-               </button>
-            <?php endforeach; ?>
-         </div>
-         <div class="week-schedule" data-week-schedule></div>
-      </div>
-      <div class="dashboard-cards" aria-label="Quick links">
-         <a class="dashboard-card" href="routine.php">
-            <i class="fa-solid fa-repeat"></i><span>Routines</span>
-            <?php if ($routineCount > 0): ?><span class="dashboard-card-count"><?php echo $routineCount; ?></span><?php endif; ?>
-         </a>
-         <a class="dashboard-card" href="task.php">
-            <i class="fa-solid fa-list-check"></i><span>Tasks</span>
-            <?php if ($taskCount > 0): ?><span class="dashboard-card-count"><?php echo $taskCount; ?></span><?php endif; ?>
-         </a>
-         <a class="dashboard-card" href="goal.php">
-            <i class="fa-solid fa-bullseye"></i><span>Goals</span>
-            <?php if ($goalCount > 0): ?><span class="dashboard-card-count"><?php echo $goalCount; ?></span><?php endif; ?>
-         </a>
-         <a class="dashboard-card" href="rewards.php">
-            <i class="fa-solid fa-gift"></i><span>Rewards</span>
-         </a>
       </div>
       <div class="rewards-modal" data-rewards-modal id="rewards-modal">
          <div class="rewards-card" role="dialog" aria-modal="true" aria-labelledby="rewards-title">

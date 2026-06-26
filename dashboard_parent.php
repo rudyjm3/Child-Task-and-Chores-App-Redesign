@@ -109,6 +109,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $parentNotificationActionSummary = 'Deleted ' . $count . ' notification' . ($count === 1 ? '' : 's') . '.';
             $parentNotificationActionTab = 'deleted';
         }
+    } elseif (isset($_POST['reject_task_notification'])) {
+        $task_id = (int)$_POST['reject_task_notification'];
+        if ($task_id) {
+            $taskStmt = $db->prepare("SELECT parent_user_id FROM tasks WHERE id = :id LIMIT 1");
+            $taskStmt->execute([':id' => $task_id]);
+            $taskRow = $taskStmt->fetch(PDO::FETCH_ASSOC);
+            if ($taskRow && (int)$taskRow['parent_user_id'] === (int)$main_parent_id) {
+                rejectTask($task_id, $main_parent_id, '', false, $main_parent_id);
+                $message = "Task rejected.";
+            }
+        }
+        header("Location: dashboard_parent.php");
+        exit;
     } elseif (isset($_POST['approve_task_notification'])) {
         $task_id = isset($_POST['approve_task_notification']) ? (int) $_POST['approve_task_notification'] : 0;
         $parent_notification_id = null;
@@ -2355,14 +2368,15 @@ function renderStreakCheckSvg($suffix) {
    ?>
    <header class="parent-header">
       <div class="parent-header__top">
+        <?php
+          $phHour = (int)date('H');
+          $phGreeting = $phHour < 12 ? 'Good Morning!' : ($phHour < 17 ? 'Good Afternoon!' : 'Good Evening!');
+          $phName = trim((string)($_SESSION['name'] ?? ($_SESSION['username'] ?? '')));
+          $phFirstName = $phName !== '' ? explode(' ', $phName)[0] : '';
+        ?>
         <div class="parent-header__titles">
-          <span class="parent-header__greeting">Welcome back</span>
-          <span class="parent-header__name">
-            <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username']); ?>
-            <?php if ($welcome_role_label): ?>
-              <span class="role-badge"><?php echo htmlspecialchars($welcome_role_label); ?></span>
-            <?php endif; ?>
-          </span>
+          <span class="parent-header__greeting"><?php echo htmlspecialchars($phGreeting); ?></span>
+          <span class="parent-header__name">Family Dashboard</span>
         </div>
         <div class="parent-header__actions">
           <button type="button" class="parent-notification-trigger page-header-action" data-parent-notify-trigger aria-label="Notifications">
@@ -2657,8 +2671,176 @@ function renderStreakCheckSvg($suffix) {
       </div>
    </div>
    <main class="dashboard">
-      <?php if (isset($message)) echo "<p>$message</p>"; ?>
-      
+      <?php if (isset($message)) echo "<p style='color:var(--color-success);padding:8px var(--mobile-pad)'>$message</p>"; ?>
+      <?php
+         // ── Aggregate stats for overview sections ──────────────────────────
+         $dashChildIds = array_column($data['children'] ?? [], 'child_user_id');
+         $dashTotalTasksDue = 0;
+         foreach (($data['children'] ?? []) as $ch) {
+             $dashTotalTasksDue += (int)($ch['task_count'] ?? 0);
+         }
+         $dashRewardsPending = array_sum($activeRewardCounts);
+         $dashPendingApprovals = [];
+         $dashRecentCompletions = [];
+         $dashFamilyPtsToday = 0;
+         $dashPendingCount = 0;
+         if (!empty($dashChildIds)) {
+             $dcp = implode(',', array_fill(0, count($dashChildIds), '?'));
+             // Pending task approvals
+             $paStmt = $db->prepare("
+                 SELECT t.id, t.title, t.points, t.category, t.child_user_id,
+                        cp.child_name, cp.avatar, t.completed_at
+                 FROM tasks t
+                 JOIN child_profiles cp ON cp.child_user_id = t.child_user_id
+                 WHERE t.child_user_id IN ($dcp)
+                   AND t.status = 'completed'
+                 ORDER BY t.completed_at DESC
+                 LIMIT 10
+             ");
+             $paStmt->execute($dashChildIds);
+             $dashPendingApprovals = $paStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+             $dashPendingCount = count($dashPendingApprovals);
+             // Recent completions
+             $rcStmt = $db->prepare("
+                 SELECT t.title, t.points, t.child_user_id, cp.child_name,
+                        COALESCE(t.approved_at, t.completed_at) AS completed_time
+                 FROM tasks t
+                 JOIN child_profiles cp ON cp.child_user_id = t.child_user_id
+                 WHERE t.child_user_id IN ($dcp)
+                   AND t.status IN ('approved', 'completed')
+                   AND COALESCE(t.approved_at, t.completed_at) >= DATE_SUB(NOW(), INTERVAL 48 HOUR)
+                 ORDER BY COALESCE(t.approved_at, t.completed_at) DESC
+                 LIMIT 5
+             ");
+             $rcStmt->execute($dashChildIds);
+             $dashRecentCompletions = $rcStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+             // Family pts today
+             $fpStmt = $db->prepare("
+                 SELECT COALESCE(SUM(t.points), 0)
+                 FROM tasks t
+                 WHERE t.child_user_id IN ($dcp)
+                   AND t.status IN ('approved', 'completed')
+                   AND DATE(COALESCE(t.approved_at, t.completed_at)) = CURDATE()
+             ");
+             $fpStmt->execute($dashChildIds);
+             $dashFamilyPtsToday = (int)$fpStmt->fetchColumn();
+         }
+      ?>
+
+      <!-- ── Your Children (compact scroll row) ── -->
+      <?php if (!empty($data['children'])): ?>
+      <section style="padding: 16px var(--mobile-pad) 0;">
+         <h2 class="section-header-title" style="font-size:var(--text-xl);font-weight:700;color:var(--color-text-dark);margin:0 0 12px;">Your Children</h2>
+         <div class="children-scroll-row">
+            <?php foreach ($data['children'] as $ch):
+               $chId = (int)($ch['child_user_id'] ?? 0);
+               $chPending = ($activeRewardCounts[$chId] ?? 0) + (int)($ch['task_count'] ?? 0);
+               $chLevel = (int)($ch['level'] ?? 1);
+            ?>
+            <a class="child-card-mini" href="task.php?child_id=<?php echo $chId; ?>" style="text-decoration:none;">
+               <?php if ($chPending > 0): ?>
+                  <span class="badge" style="top:6px;right:6px;"><?php echo $chPending; ?></span>
+               <?php endif; ?>
+               <div class="child-card-mini__avatar">
+                  <img src="<?php echo htmlspecialchars($ch['avatar'] ?? 'images/avatar_images/default-avatar.png'); ?>" alt="<?php echo htmlspecialchars($ch['child_name']); ?>">
+               </div>
+               <div class="child-card-mini__name"><?php echo htmlspecialchars($ch['child_name']); ?></div>
+               <span class="child-card-mini__level">Level <?php echo $chLevel; ?></span>
+            </a>
+            <?php endforeach; ?>
+         </div>
+      </section>
+      <?php endif; ?>
+
+      <!-- ── Today at a Glance (stat chips) ── -->
+      <section style="padding: 16px var(--mobile-pad) 0;">
+         <h2 class="section-header-title" style="font-size:var(--text-xl);font-weight:700;color:var(--color-text-dark);margin:0 0 12px;">Today at a Glance</h2>
+         <div class="quick-glance-row">
+            <div class="stat-chip" style="--chip-bg:var(--color-primary-light);--chip-color:var(--color-primary);">
+               <div class="stat-chip__value"><?php echo $dashTotalTasksDue; ?></div>
+               <div class="stat-chip__label">Tasks Due</div>
+            </div>
+            <div class="stat-chip" style="--chip-bg:var(--color-warning-light);--chip-color:var(--color-warning);">
+               <div class="stat-chip__value"><?php echo $dashPendingCount; ?></div>
+               <div class="stat-chip__label">Pending Approval</div>
+            </div>
+            <div class="stat-chip" style="--chip-bg:var(--color-accent-light);--chip-color:var(--color-accent);">
+               <div class="stat-chip__value"><?php echo $dashRewardsPending; ?></div>
+               <div class="stat-chip__label">Rewards Pending</div>
+            </div>
+         </div>
+      </section>
+
+      <!-- ── Pending Approvals ── -->
+      <?php if (!empty($dashPendingApprovals)): ?>
+      <section style="padding: 16px var(--mobile-pad) 0;">
+         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <h2 style="font-size:var(--text-xl);font-weight:700;color:var(--color-text-dark);margin:0;">Pending Approvals</h2>
+            <span class="badge" style="position:static;"><?php echo $dashPendingCount; ?></span>
+         </div>
+         <div class="card-list">
+         <?php foreach ($dashPendingApprovals as $pa):
+            $paCategory = $pa['category'] ?? 'task';
+            $paCategoryLabel = ucfirst(str_replace('_', ' ', $paCategory));
+         ?>
+            <div class="approval-card">
+               <span class="approval-card__strip"></span>
+               <div class="approval-card__body">
+                  <div style="font-size:var(--text-sm);color:var(--color-text-sec);"><?php echo htmlspecialchars($pa['child_name']); ?> completed:</div>
+                  <div class="approval-card__title"><?php echo htmlspecialchars($pa['title']); ?></div>
+                  <span class="status-badge status-badge--pending" style="display:inline-flex;margin-top:4px;"><?php echo htmlspecialchars($paCategoryLabel); ?></span>
+               </div>
+               <div class="approval-card__actions" style="flex-direction:column;align-items:flex-end;gap:4px;">
+                  <span style="font-size:var(--text-base);font-weight:700;color:var(--color-warning);">+<?php echo (int)$pa['points']; ?></span>
+                  <form method="POST" style="display:inline;">
+                     <button type="submit" name="approve_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-approve">Approve</button>
+                  </form>
+                  <form method="POST" style="display:inline;">
+                     <button type="submit" name="reject_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-reject">Reject</button>
+                  </form>
+               </div>
+            </div>
+         <?php endforeach; ?>
+         </div>
+      </section>
+      <?php endif; ?>
+
+      <!-- ── Recent Completions ── -->
+      <?php if (!empty($dashRecentCompletions)): ?>
+      <section style="padding: 16px var(--mobile-pad) 0;">
+         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h2 style="font-size:var(--text-xl);font-weight:700;color:var(--color-text-dark);margin:0;">Recent Completions</h2>
+            <a href="task.php" style="font-size:var(--text-base);font-weight:600;color:var(--color-accent);text-decoration:none;">View All</a>
+         </div>
+         <div class="card-list">
+         <?php foreach ($dashRecentCompletions as $rc):
+            $rcTime = !empty($rc['completed_time']) ? $rc['completed_time'] : null;
+            $rcLabel = '';
+            if ($rcTime) {
+               $rcTs = strtotime($rcTime);
+               $rcLabel = date('Y-m-d', $rcTs) === date('Y-m-d') ? date('g:i A', $rcTs) : 'Yesterday';
+            }
+         ?>
+            <div class="completion-row">
+               <span class="completion-row__check"><i class="fa-solid fa-check"></i></span>
+               <div class="completion-row__body">
+                  <div class="completion-row__title"><?php echo htmlspecialchars($rc['title']); ?></div>
+                  <div class="completion-row__meta"><?php echo htmlspecialchars($rc['child_name']); ?><?php echo $rcLabel ? ' · ' . $rcLabel : ''; ?></div>
+               </div>
+               <span class="completion-row__pts">+<?php echo (int)$rc['points']; ?> pts</span>
+            </div>
+         <?php endforeach; ?>
+         </div>
+      </section>
+      <?php endif; ?>
+
+      <!-- ── Family Strip ── -->
+      <div class="family-strip" style="margin: 16px var(--mobile-pad) 0;">
+         <span class="family-strip__text">Family earned <?php echo $dashFamilyPtsToday; ?> pts today!</span>
+         <a href="task.php" class="family-strip__btn">+ Add Task</a>
+      </div>
+
+      <!-- ── Children Detail (existing per-child cards) ── -->
       <div class="children-overview">
          <h2>Children Overview</h2>
          <?php if (isset($data['children']) && is_array($data['children']) && !empty($data['children'])): ?>
