@@ -1395,8 +1395,46 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             </div>
           </div>
         </div>
+        <?php
+          $gcStatActive = count(array_filter($active_goals ?? [], fn($g) => ($g['status'] ?? '') !== 'pending_approval'));
+          $gcStatAlmost = count(array_filter($active_goals ?? [], fn($g) => ($g['status'] ?? '') === 'pending_approval'));
+          $gcStatDone = count($completed_goals ?? []);
+        ?>
+        <div style="display:flex;gap:8px;padding:0 var(--mobile-pad) 4px;">
+          <div style="flex:1;background:#fff;border-radius:12px;padding:10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+            <div style="font-size:1.3rem;font-weight:700;color:#6D28D9;"><?php echo $gcStatActive; ?></div>
+            <div style="font-size:0.7rem;color:#8a94a6;font-weight:600;">Active</div>
+          </div>
+          <div style="flex:1;background:#fffbeb;border-radius:12px;padding:10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+            <div style="font-size:1.3rem;font-weight:700;color:#f59e0b;"><?php echo $gcStatAlmost; ?></div>
+            <div style="font-size:0.7rem;color:#8a94a6;font-weight:600;">Almost!</div>
+          </div>
+          <div style="flex:1;background:#d1fae5;border-radius:12px;padding:10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+            <div style="font-size:1.3rem;font-weight:700;color:#065f46;"><?php echo $gcStatDone; ?></div>
+            <div style="font-size:0.7rem;color:#8a94a6;font-weight:600;">Done</div>
+          </div>
+        </div>
         <?php else: ?>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px var(--mobile-pad) 0;">
+        <?php
+          $gsActiveCount = count($active_goals ?? []);
+          $gsPendingCount = count(array_filter($active_goals ?? [], fn($g) => ($g['status'] ?? '') === 'pending_approval'));
+          $gsCompletedCount = count($completed_goals ?? []);
+        ?>
+        <div style="background:linear-gradient(135deg,#6D28D9,#A78BFA);border-radius:16px;margin:12px var(--mobile-pad);padding:14px 0;display:flex;">
+          <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.2);padding:6px 0;">
+            <div style="font-size:1.5rem;font-weight:700;color:#fff;"><?php echo $gsActiveCount; ?></div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);font-weight:600;">Active</div>
+          </div>
+          <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.2);padding:6px 0;">
+            <div style="font-size:1.5rem;font-weight:700;color:#fbbf24;"><?php echo $gsPendingCount; ?></div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);font-weight:600;">Pending</div>
+          </div>
+          <div style="flex:1;text-align:center;padding:6px 0;">
+            <div style="font-size:1.5rem;font-weight:700;color:#6ee7b7;"><?php echo $gsCompletedCount; ?></div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);font-weight:600;">Completed</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px var(--mobile-pad) 0;">
           <div class="filter-chip-row" style="display:flex;gap:8px;flex-wrap:wrap;">
             <?php
               $gfChips = ['' => 'All', 'active' => 'Active', 'pending_approval' => 'Pending', 'completed' => 'Completed'];
@@ -1515,13 +1553,13 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                                         $gcCircumference = round(2 * M_PI * 28, 2);
                                         $gcDashOffset = round($gcCircumference * (1 - $progressPercent / 100), 2);
                                         if ($displayStatus === 'pending_approval') {
-                                            $gcBadgeClass = 'gc-badge--waiting'; $gcBadgeLabel = 'Pending';
+                                            $gcBadgeClass = 'gc-badge--waiting'; $gcBadgeLabel = 'Approve?';
                                         } elseif ($displayStatus === 'completed') {
                                             $gcBadgeClass = 'gc-badge--done'; $gcBadgeLabel = 'Done';
                                         } elseif ($progressPercent >= 80) {
-                                            $gcBadgeClass = 'gc-badge--ontrack'; $gcBadgeLabel = 'Almost!';
+                                            $gcBadgeClass = 'gc-badge--ontrack'; $gcBadgeLabel = 'On Track';
                                         } else {
-                                            $gcBadgeClass = 'gc-badge--active'; $gcBadgeLabel = 'Active';
+                                            $gcBadgeClass = 'gc-badge--ontrack'; $gcBadgeLabel = 'On Track';
                                         }
                                     ?>
                                     <div class="goal-card<?php echo $gcIsChild ? ' gcard--child' : ''; ?>" id="goal-<?php echo (int) $goal['id']; ?>">
@@ -1544,10 +1582,17 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                                             <?php if ($gcIsChild && $gcDaysLeft !== null): ?>
                                                 <span style="font-size:0.72rem;color:#8a94a6;"><?php echo $gcDaysLeft; ?>d left</span>
                                             <?php endif; ?>
-                                            <?php if ($gcIsChild && $goal['status'] === 'active' && ($goal['goal_type'] ?? 'manual') === 'manual'): ?>
-                                                <form method="POST" action="goal.php" style="margin-top:4px;">
+                                            <?php if ($gcIsChild && $displayStatus === 'pending_approval'): ?>
+                                                <div style="margin-top:6px;"><span style="font-size:0.72rem;color:#f59e0b;font-weight:600;">Waiting for approval...</span></div>
+                                            <?php elseif ($gcIsChild && $goal['status'] === 'active' && $progressPercent >= 100): ?>
+                                                <form method="POST" action="goal.php" style="margin-top:6px;">
                                                     <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
-                                                    <button type="submit" name="request_completion" class="button" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#fff;border:none;border-radius:12px;padding:7px 16px;font-weight:700;font-size:0.82rem;cursor:pointer;">Claim!</button>
+                                                    <button type="submit" name="request_completion" class="button" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#fff;border:none;border-radius:999px;padding:8px 20px;font-weight:700;font-size:0.85rem;cursor:pointer;min-height:38px;">Claim!</button>
+                                                </form>
+                                            <?php elseif ($gcIsChild && $goal['status'] === 'active' && ($goal['goal_type'] ?? '') === 'manual'): ?>
+                                                <form method="POST" action="goal.php" style="margin-top:6px;">
+                                                    <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                                    <button type="submit" name="request_completion" class="button" style="background:linear-gradient(135deg,#6D28D9,#A78BFA);color:#fff;border:none;border-radius:999px;padding:8px 20px;font-weight:700;font-size:0.85rem;cursor:pointer;min-height:38px;">Mark Done</button>
                                                 </form>
                                             <?php endif; ?>
                                         </div>
@@ -1606,6 +1651,21 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                         <?php endif; ?>
                     </div>
                 </details>
+                <?php if (!$isParentContext && !empty($completed_goals)): ?>
+                <div style="padding:4px 0 8px;">
+                  <div style="font-size:1rem;font-weight:700;color:#1a202c;padding:8px var(--mobile-pad) 6px;">Completed (<?php echo count($completed_goals); ?>)</div>
+                  <div style="display:flex;gap:14px;padding:4px var(--mobile-pad) 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;">
+                    <?php foreach ($completed_goals as $cg): ?>
+                      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
+                        <div style="width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#fbbf24);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(245,158,11,0.3);">
+                          <i class="fa-solid fa-trophy" style="color:#fff;font-size:1.2rem;"></i>
+                        </div>
+                        <span style="font-size:0.65rem;font-weight:600;color:#6b7280;white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis;text-align:center;"><?php echo htmlspecialchars(mb_substr($cg['title'] ?? '', 0, 10, 'UTF-8')); ?></span>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+                <?php else: ?>
                 <details class="task-section-toggle">
                     <summary>
                         <span class="task-section-title">Completed Goals <span class="task-count-badge"><?php echo count($completed_goals); ?></span></span>
@@ -1740,6 +1800,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                         <?php endif; ?>
                     </div>
                 </details>
+                <?php endif; // end child trophy chips / parent completed section ?>
                 <details class="task-section-toggle">
                     <summary>
                         <span class="task-section-title">Inactive Goals <span class="task-count-badge"><?php echo count($rejected_goals); ?></span></span>

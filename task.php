@@ -687,14 +687,22 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
         .task-card__pts { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: #f59e0b; font-size: 0.82rem; white-space: nowrap; }
         /* Status badges */
         .tc-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
-        .tc-badge--pending  { background: #ede9fe; color: #7c3aed; }
+        .tc-badge--pending  { background: #fef3c7; color: #92400e; }
+        .tc-badge--todo     { background: #ede9fe; color: #7c3aed; }
         .tc-badge--waiting  { background: #fef3c7; color: #92400e; }
         .tc-badge--approved { background: #d1fae5; color: #065f46; }
+        .tc-badge--done     { background: #d1fae5; color: #065f46; }
         .tc-badge--overdue  { background: #fee2e2; color: #991b1b; }
         .tc-badge--expired  { background: #f1f5f9; color: #64748b; }
         /* Expand chevron */
         .task-card-chevron { color: #b0bec5; transition: transform 200ms ease; flex-shrink: 0; font-size: 0.72rem; margin-left: 2px; }
         .task-card[open] .task-card-chevron { transform: rotate(180deg); }
+        /* Child task flat cards */
+        .child-task-flat-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 10px; }
+        .tc-icon-circle { width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+        .tc-complete-btn { background: linear-gradient(135deg, #6D28D9, #A78BFA); color: #fff; border: none; border-radius: 999px; padding: 7px 14px; font-weight: 700; font-size: 0.78rem; cursor: pointer; white-space: nowrap; min-height: 36px; }
+        .tc-tod-label { font-size: 0.78rem; font-weight: 600; color: #8a94a6; padding: 12px var(--mobile-pad) 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .child-task-flat-card .task-card__right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
         /* Legacy compat — keep old title/sub classes working for child.css */
         .task-card-title { font-weight: 700; font-size: 0.95rem; color: #1a202c; }
         .task-card-subtitle { font-size: 0.78rem; color: #8a94a6; }
@@ -3378,7 +3386,106 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
             <?php if (empty($tasks)): ?>
                 <p>No tasks available.</p>
             <?php else: ?>
-                <details class="task-section-toggle">
+                <?php if ($isParentContext): ?>
+                <details class="task-section-toggle" <?php echo !empty($completed_tasks) ? 'open' : ''; ?>>
+                    <summary>
+                        <span class="task-section-title"><span class="task-section-icon is-pending"><i class="fa-solid fa-square-check"></i></span>Pending Approval <span class="task-count-badge"><?php echo count($completed_tasks); ?></span></span>
+                    </summary>
+                    <div class="task-section-content">
+                        <?php if (empty($completed_tasks)): ?>
+                            <p>No tasks waiting approval.</p>
+                        <?php else: ?>
+                            <?php foreach ($completed_tasks as $task): ?>
+                            <?php
+                                $timeOfDay = $task['time_of_day'] ?? 'anytime';
+                                $isOnce = empty($task['recurrence']);
+                                $completedStamp = $task['completed_at'] ?? null;
+                                if (!$completedStamp && !empty($task['instance_date'])) {
+                                    $completedStamp = $task['instance_date'];
+                                }
+                                $completedLabel = '';
+                                if (!empty($completedStamp)) {
+                                    $completedLabel = !empty($task['completed_at'])
+                                        ? date('m/d/Y h:i A', strtotime($completedStamp))
+                                        : date('m/d/Y', strtotime($completedStamp));
+                                }
+                                $childName = $childNameById[(int)$task['child_user_id']] ?? 'Child';
+                                $childDisplayName = $task['child_display_name'] ?? $childName;
+                                $dueDateValue = !empty($task['due_date']) ? date('Y-m-d', strtotime($task['due_date'])) : date('Y-m-d');
+                                $dueTimeValue = !empty($task['due_date']) ? date('H:i', strtotime($task['due_date'])) : '';
+                                $repeatValue = $task['recurrence'] === 'daily' ? 'daily' : ($task['recurrence'] === 'weekly' ? 'weekly' : '');
+                                if ($isOnce) {
+                                    $dueDisplay = $task['due_date_formatted'];
+                                } elseif ($timeOfDay === 'anytime') {
+                                    $dueDisplay = 'Anytime';
+                                } else {
+                                    $timeText = !empty($task['due_date']) ? date('g:i A', strtotime($task['due_date'])) : '';
+                                    if ($timeText === '12:00 AM') { $timeText = ''; }
+                                    $dueDisplay = $timeText !== '' ? $timeText : ucfirst($timeOfDay);
+                                }
+                            ?>
+                            <?php
+                                $tcCatColorsPA = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                                $tcStripColorPA = $tcCatColorsPA[$task['category'] ?? ''] ?? '#6D28D9';
+                            ?>
+                            <details class="task-card" id="task-pa-<?php echo (int) $task['id']; ?>" data-task-id="<?php echo $task['id']; ?>">
+                                <summary class="task-card-summary">
+                                    <span class="task-card__strip" style="--tc-strip:<?php echo $tcStripColorPA; ?>;"></span>
+                                    <div class="task-card__body">
+                                        <?php if (!empty($childDisplayName)): ?>
+                                            <span class="child-name-chip"><?php echo htmlspecialchars($childDisplayName); ?></span>
+                                        <?php endif; ?>
+                                        <div class="task-card__title"><?php echo htmlspecialchars($task['title']); ?></div>
+                                        <div class="task-card__sub"><?php echo htmlspecialchars(ucfirst($task['category'] ?? 'Task')); ?> · <?php echo htmlspecialchars($dueDisplay); ?></div>
+                                    </div>
+                                    <div class="task-card__right">
+                                        <span class="task-card__pts"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?> pts</span>
+                                        <span class="tc-badge tc-badge--pending">Pending</span>
+                                    </div>
+                                    <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
+                                </summary>
+                                <div class="task-card-body">
+                                    <?php if (!empty($task['description'])): ?>
+                                        <div class="task-card-note text"><i class="fa-solid fa-message task-desc-icon"></i><span><?php echo htmlspecialchars($task['description']); ?></span></div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($task['photo_proof'])): ?>
+                                        <div class="task-description">
+                                            <img src="<?php echo htmlspecialchars($task['photo_proof']); ?>" alt="Photo proof" class="task-photo-thumb" data-task-photo-src="<?php echo htmlspecialchars($task['photo_proof'], ENT_QUOTES); ?>">
+                                        </div>
+                                    <?php endif; ?>
+                                    <?php if (canCreateContent($_SESSION['user_id']) && canAddEditChild($_SESSION['user_id'])): ?>
+                                        <form method="POST" action="task.php" id="approve-form-pa-<?php echo (int) $task['id']; ?>">
+                                            <input type="hidden" name="task_id" value="<?php echo $task['id']; ?>">
+                                            <?php if (!empty($task['instance_date'])): ?>
+                                                <input type="hidden" name="instance_date" value="<?php echo htmlspecialchars($task['instance_date']); ?>">
+                                            <?php endif; ?>
+                                            <button type="submit" name="approve_task" class="button">Review &amp; Approve</button>
+                                        </form>
+                                        <form method="POST" action="task.php" class="task-reject-form" id="reject-form-pa-<?php echo (int) $task['id']; ?>">
+                                            <input type="hidden" name="task_id" value="<?php echo $task['id']; ?>">
+                                            <input type="hidden" name="reject_task" value="1">
+                                            <?php if (!empty($task['instance_date'])): ?>
+                                                <input type="hidden" name="instance_date" value="<?php echo htmlspecialchars($task['instance_date']); ?>">
+                                            <?php endif; ?>
+                                            <label for="reject_note_pa_<?php echo (int) $task['id']; ?>">Rejection note (optional)</label>
+                                            <textarea id="reject_note_pa_<?php echo (int) $task['id']; ?>" name="reject_note" placeholder="Explain why this task was rejected."></textarea>
+                                        </form>
+                                        <div class="task-reject-bar">
+                                            <div class="task-reject-actions">
+                                                <button type="submit" name="reject_action" value="reactivate" class="button secondary" form="reject-form-pa-<?php echo (int) $task['id']; ?>">Reject &amp; Reactivate</button>
+                                                <button type="submit" name="reject_action" value="close" class="button danger" form="reject-form-pa-<?php echo (int) $task['id']; ?>">Reject &amp; Close</button>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </details>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                </details>
+                <?php endif; // isParentContext — Pending Approval first for parent ?>
+                <?php if ($isParentContext): ?>
+                <details class="task-section-toggle" open>
                     <summary>
                         <span class="task-section-title"><span class="task-section-icon is-active"><i class="fa-solid fa-list-check"></i></span>Active Tasks <span class="task-count-badge"><?php echo count($pending_tasks); ?></span></span>
                     </summary>
@@ -3462,7 +3569,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                     <?php if ($is_overdue): ?>
                                         <span class="tc-badge tc-badge--overdue">Overdue</span>
                                     <?php else: ?>
-                                        <span class="tc-badge tc-badge--pending">Pending</span>
+                                        <span class="tc-badge tc-badge--todo">To Do</span>
                                     <?php endif; ?>
                                 </div>
                                 <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
@@ -3654,7 +3761,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                     </div>
                                     <div class="task-card__right">
                                         <span class="task-card__pts"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?> pts</span>
-                                        <span class="tc-badge tc-badge--waiting">Waiting</span>
+                                        <span class="tc-badge tc-badge--pending">Pending</span>
                                     </div>
                                     <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
                                 </summary>
@@ -3818,7 +3925,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                     </div>
                                     <div class="task-card__right">
                                         <span class="task-card__pts"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?> pts</span>
-                                        <span class="tc-badge tc-badge--approved">Approved</span>
+                                        <span class="tc-badge tc-badge--done">Done</span>
                                     </div>
                                     <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
                                 </summary>
@@ -3939,6 +4046,82 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php endif; ?>
                     </div>
                 </details>
+                <?php else: // CHILD VIEW — time-of-day grouped flat cards ?>
+                <?php
+                    $catCircleBg = ['chore'=>'#fff0e6','learning'=>'#f3edff','routine'=>'#e6f7f5','pet'=>'#fff8e6','custom'=>'#f3efff'];
+                    $catColorsFl = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                    $childAllTasks = [];
+                    foreach ($pending_tasks as $t) { $t['_status'] = 'todo'; $childAllTasks[] = $t; }
+                    foreach ($completed_tasks as $t) { $t['_status'] = 'waiting'; $childAllTasks[] = $t; }
+                    foreach ($approved_tasks as $t) { $t['_status'] = 'done'; $childAllTasks[] = $t; }
+                    $todOrder = ['morning'=>0,'afternoon'=>1,'evening'=>2,'anytime'=>3];
+                    usort($childAllTasks, function($a,$b) use ($todOrder) {
+                        return ($todOrder[$a['time_of_day']??'anytime']??3) <=> ($todOrder[$b['time_of_day']??'anytime']??3);
+                    });
+                    $childByTod = [];
+                    foreach ($childAllTasks as $t) { $childByTod[$t['time_of_day']??'anytime'][] = $t; }
+                    $todLabels = ['morning'=>'Morning','afternoon'=>'Afternoon','evening'=>'Evening','anytime'=>'Anytime'];
+                ?>
+                <?php if (empty($childAllTasks)): ?>
+                    <p style="padding:16px var(--mobile-pad);">No tasks for today.</p>
+                <?php else: ?>
+                <?php foreach ($childByTod as $tod => $todTasks): ?>
+                    <div class="tc-tod-label"><?php echo $todLabels[$tod] ?? ucfirst($tod); ?></div>
+                    <?php foreach ($todTasks as $task): ?>
+                        <?php
+                            $catKey = $task['category'] ?? '';
+                            $catColor = $catColorsFl[$catKey] ?? '#6D28D9';
+                            $circleBg = $catCircleBg[$catKey] ?? '#f3edff';
+                            $status = $task['_status'];
+                            $todDisplay = $todLabels[$task['time_of_day']??'anytime'] ?? 'Anytime';
+                            $catDisplay = ucfirst($catKey ?: 'Task');
+                            $pts = (int)($task['points'] ?? 0);
+                            $taskId = (int)$task['id'];
+                            $instanceDate = $task['instance_date'] ?? '';
+                            $photoRequired = !empty($task['photo_proof_required']);
+                        ?>
+                        <div class="child-task-flat-card" id="task-<?php echo $taskId; ?>">
+                            <?php if ($status === 'done'): ?>
+                                <div class="tc-icon-circle" style="background:#d1fae5;">
+                                    <i class="fa-solid fa-check" style="color:#059669;font-size:1.1rem;"></i>
+                                </div>
+                            <?php else: ?>
+                                <div class="tc-icon-circle" style="background:<?php echo $circleBg; ?>;border:2px solid <?php echo $catColor; ?>33;"></div>
+                            <?php endif; ?>
+                            <div class="task-card__body">
+                                <div class="task-card__title"><?php echo htmlspecialchars($task['title']); ?></div>
+                                <div class="task-card__sub"><?php echo $catDisplay; ?> · <?php echo $todDisplay; ?></div>
+                            </div>
+                            <div class="task-card__right">
+                                <span class="task-card__pts"><i class="fa-solid fa-coins"></i> <?php echo $pts; ?> pts</span>
+                                <?php if ($status === 'done'): ?>
+                                    <span class="tc-badge tc-badge--done">Done</span>
+                                <?php elseif ($status === 'waiting'): ?>
+                                    <span class="tc-badge tc-badge--pending">Pending</span>
+                                <?php else: ?>
+                                    <?php if ($photoRequired): ?>
+                                        <button type="button" class="tc-complete-btn"
+                                            data-task-proof-open
+                                            data-task-id="<?php echo $taskId; ?>"
+                                            data-date-key="<?php echo htmlspecialchars($instanceDate ?: date('Y-m-d')); ?>">
+                                            Complete!
+                                        </button>
+                                    <?php else: ?>
+                                        <form method="POST" action="task.php" style="margin:0;">
+                                            <input type="hidden" name="task_id" value="<?php echo $taskId; ?>">
+                                            <?php if ($instanceDate): ?>
+                                                <input type="hidden" name="instance_date" value="<?php echo htmlspecialchars($instanceDate); ?>">
+                                            <?php endif; ?>
+                                            <button type="submit" name="complete_task" class="tc-complete-btn">Complete!</button>
+                                        </form>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endforeach; ?>
+                <?php endif; // empty childAllTasks ?>
+                <?php endif; // isParentContext ?>
             <?php endif; ?>
         </div>
 <section class="task-calendar-section">
