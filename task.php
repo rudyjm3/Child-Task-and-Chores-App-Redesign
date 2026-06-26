@@ -3120,17 +3120,16 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
         $rewardsActive = $currentPage === 'rewards.php';
         $profileActive = $currentPage === 'profile.php';
     ?>
+    <?php
+      $thHour = (int)date('H');
+      $thGreeting = $thHour < 12 ? 'Good Morning!' : ($thHour < 17 ? 'Good Afternoon!' : 'Good Evening!');
+    ?>
     <?php if ($isParentContext): ?>
     <header class="parent-header">
       <div class="parent-header__top">
         <div class="parent-header__titles">
-          <span class="parent-header__greeting">Welcome back</span>
-          <span class="parent-header__name">
-            <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'Unknown User'); ?>
-            <?php if ($welcome_role_label): ?>
-              <span class="role-badge"><?php echo htmlspecialchars($welcome_role_label); ?></span>
-            <?php endif; ?>
-          </span>
+          <span class="parent-header__greeting"><?php echo htmlspecialchars($thGreeting); ?></span>
+          <span class="parent-header__name">Task Manager</span>
         </div>
         <div class="parent-header__actions">
           <?php if (!empty($isParentNotificationUser)): ?>
@@ -3176,8 +3175,8 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
     <header class="child-header">
       <div class="child-header__inner">
         <div class="child-header__titles">
-          <span class="child-header__greeting">Welcome back</span>
-          <span class="child-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'Unknown User'); ?></span>
+          <span class="child-header__greeting"><?php echo htmlspecialchars($thGreeting); ?></span>
+          <span class="child-header__name"><?php echo htmlspecialchars(explode(' ', trim((string)($_SESSION['name'] ?? ($_SESSION['username'] ?? ''))))[0] ?? 'My'); ?>'s Tasks</span>
         </div>
         <div class="child-header__actions">
           <?php if (!empty($isChildNotificationUser)): ?>
@@ -3216,14 +3215,30 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
     </header>
     <?php endif; ?>
     <main>
-        <?php if (isset($message)) echo "<p>$message</p>"; ?>
+        <?php if (isset($message)) echo "<p style='padding:8px var(--mobile-pad);color:var(--color-success);'>$message</p>"; ?>
+        <?php if (!$isParentContext):
+          $chTasksDue = (int)($tasksCount ?? 0);
+          $chTasksDone = count($approved_tasks ?? []);
+          $chTotalForProgress = $chTasksDue + $chTasksDone;
+          $chProgress = $chTotalForProgress > 0 ? min(100, (int)round($chTasksDone / $chTotalForProgress * 100)) : 0;
+        ?>
+        <div class="gradient-hero-header">
+          <div class="gradient-hero-header__title">My Tasks</div>
+          <div class="gradient-hero-header__sub">
+            <?php echo $chTasksDue; ?> task<?php echo $chTasksDue !== 1 ? 's' : ''; ?> today &mdash; you got this!
+          </div>
+          <div style="background:rgba(255,255,255,0.25);border-radius:99px;height:8px;overflow:hidden;margin-top:14px;">
+            <div style="background:var(--color-white);height:100%;width:<?php echo $chProgress; ?>%;border-radius:99px;transition:width 0.4s;"></div>
+          </div>
+        </div>
+        <?php endif; ?>
         <div class="task-list">
             <div class="task-list-header">
                 <h2 class="task-list-title"></h2>
-                <?php if (canCreateContent($_SESSION['user_id'])): ?>
+                <?php if ($isParentContext): ?>
                     <p class="task-list-subtitle" data-task-list-subtitle>Managing <strong data-task-week-count><?php echo (int) $tasksCount; ?></strong> <span data-task-week-label><?php echo ((int) $tasksCount) === 1 ? 'task' : 'tasks'; ?></span> this week</p>
                 <?php endif; ?>
-                <?php if (canCreateContent($_SESSION['user_id'])): ?>
+                <?php if ($isParentContext): ?>
                     <div class="task-create-fab">
                         <button type="button" class="task-create-button" data-task-create-open aria-label="Create Task">
                             <i class="fa-solid fa-plus"></i>
@@ -3243,6 +3258,25 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                 $filterQuery = http_build_query($filterParams);
                 $filterPrefix = $filterQuery ? ('?' . $filterQuery) : '';
             ?>
+            <?php if ($isParentContext): ?>
+            <div class="filter-chip-row" style="display:flex;gap:8px;padding:12px var(--mobile-pad) 0;flex-wrap:wrap;" aria-label="Filter by status">
+              <?php
+                $fcChildParam = $selectedChildId ? '&child_id=' . (int)$selectedChildId : '';
+                $fcChips = [
+                  '' => 'All',
+                  'pending' => 'Pending',
+                  'approved' => 'Done',
+                  'expired' => 'Overdue',
+                ];
+              ?>
+              <?php foreach ($fcChips as $fcStatus => $fcLabel): ?>
+                <a href="task.php?status=<?php echo urlencode($fcStatus) . $fcChildParam; ?>"
+                   class="filter-chip<?php echo $filterStatus === $fcStatus ? ' filter-chip--active' : ''; ?>">
+                  <?php echo htmlspecialchars($fcLabel); ?>
+                </a>
+              <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
             <?php if (canCreateContent($_SESSION['user_id']) && !empty($children)): ?>
                 <div class="task-filter-row" aria-label="Filter tasks by child">
                     <div class="task-child-grid">

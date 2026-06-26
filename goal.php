@@ -1245,17 +1245,18 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
         $profileActive = $currentPage === 'profile.php';
         $isParentContext = canCreateContent($_SESSION['user_id']);
     ?>
+    <?php
+      $ghHour = (int)date('H');
+      $ghGreeting = $ghHour < 12 ? 'Good Morning!' : ($ghHour < 17 ? 'Good Afternoon!' : 'Good Evening!');
+      $ghRawName = trim((string)($_SESSION['name'] ?? ($_SESSION['username'] ?? '')));
+      $ghFirstName = $ghRawName !== '' ? explode(' ', $ghRawName)[0] : '';
+    ?>
     <?php if ($isParentContext): ?>
     <header class="parent-header">
       <div class="parent-header__top">
         <div class="parent-header__titles">
-          <span class="parent-header__greeting">Welcome back</span>
-          <span class="parent-header__name">
-            <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'Unknown User'); ?>
-            <?php if ($welcome_role_label): ?>
-              <span class="role-badge"><?php echo htmlspecialchars($welcome_role_label); ?></span>
-            <?php endif; ?>
-          </span>
+          <span class="parent-header__greeting"><?php echo htmlspecialchars($ghGreeting); ?></span>
+          <span class="parent-header__name">Goal Manager</span>
         </div>
         <div class="parent-header__actions">
           <?php if (!empty($isParentNotificationUser)): ?>
@@ -1301,8 +1302,8 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
     <header class="child-header">
       <div class="child-header__inner">
         <div class="child-header__titles">
-          <span class="child-header__greeting">Welcome back</span>
-          <span class="child-header__name"><?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username'] ?? 'Unknown User'); ?></span>
+          <span class="child-header__greeting"><?php echo htmlspecialchars($ghGreeting); ?></span>
+          <span class="child-header__name"><?php echo htmlspecialchars($ghFirstName !== '' ? $ghFirstName . "'s Goals" : 'My Goals'); ?></span>
         </div>
         <div class="child-header__actions">
           <?php if (!empty($isChildNotificationUser)): ?>
@@ -1342,14 +1343,44 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
     <?php endif; ?>
     <?php $celebrationGoals = ($_SESSION['role'] === 'child') ? [] : null; ?>
     <main class="<?php echo ($_SESSION['role'] === 'child') ? 'child-view' : ''; ?>">
-        <?php if (isset($message)) echo "<p>$message</p>"; ?>
-        <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-            <div class="goal-actions">
-                <h2>Goals</h2>
-                <button type="button" class="goal-create-button" data-goal-create-open aria-label="Create Goal">
-                    <i class="fa-solid fa-plus"></i>
-                </button>
+        <?php if (isset($message)) echo "<p style='padding:8px var(--mobile-pad);color:var(--color-success);'>$message</p>"; ?>
+        <?php if (!$isParentContext):
+          $ghActiveCount = count($active_goals ?? []);
+          $ghDoneCount = count($completed_goals ?? []);
+          $ghTotalCount = $ghActiveCount + $ghDoneCount;
+        ?>
+        <div class="gradient-hero-header" style="min-height:130px;">
+          <div class="gradient-hero-header__title">My Goals</div>
+          <div class="gradient-hero-header__sub">Chase your goals &amp; earn rewards!</div>
+          <div style="display:flex;gap:12px;margin-top:16px;">
+            <div style="background:rgba(255,255,255,0.2);border-radius:var(--radius-md);padding:8px 14px;text-align:center;">
+              <div style="font-size:var(--text-2xl);font-weight:700;color:var(--color-white);"><?php echo $ghActiveCount; ?></div>
+              <div style="font-size:var(--text-sm);color:rgba(255,255,255,0.8);">Active</div>
             </div>
+            <div style="background:rgba(255,255,255,0.2);border-radius:var(--radius-md);padding:8px 14px;text-align:center;">
+              <div style="font-size:var(--text-2xl);font-weight:700;color:var(--color-gold);"><?php echo $ghDoneCount; ?></div>
+              <div style="font-size:var(--text-sm);color:rgba(255,255,255,0.8);">Completed</div>
+            </div>
+          </div>
+        </div>
+        <?php else: ?>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px var(--mobile-pad) 0;">
+          <div class="filter-chip-row" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <?php
+              $gfChips = ['' => 'All', 'active' => 'Active', 'pending_approval' => 'Pending', 'completed' => 'Completed'];
+              $gfCurrent = $_GET['status'] ?? '';
+            ?>
+            <?php foreach ($gfChips as $gfStatus => $gfLabel): ?>
+              <a href="goal.php<?php echo $gfStatus !== '' ? '?status=' . urlencode($gfStatus) : ''; ?>"
+                 class="filter-chip<?php echo $gfCurrent === $gfStatus ? ' filter-chip--active' : ''; ?>">
+                <?php echo htmlspecialchars($gfLabel); ?>
+              </a>
+            <?php endforeach; ?>
+          </div>
+          <button type="button" class="goal-create-button" data-goal-create-open aria-label="Create Goal">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
         <?php endif; ?>
         <div class="goal-list">
             <h2><?php echo (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) ? 'Created Goals' : 'Your Goals'; ?></h2>

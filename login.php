@@ -39,37 +39,163 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Child Task and Chore App</title>
+    <title>Login — FamilyQuest</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/main.css?v=3.27.0">
     <style>
-        .login-form { padding: 20px; max-width: 400px; margin: 0 auto; text-align: center; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; }
-        .form-group input { width: 100%; padding: 8px; }
-        .button { padding: 10px 20px; background-color: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        @media (max-width: 768px) { .login-form { padding: 10px; } }
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--color-bg);
+            font-family: var(--font-base);
+            padding: var(--mobile-pad);
+            box-sizing: border-box;
+        }
+
+        .login-card {
+            background: var(--color-white);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-hero);
+            width: 100%;
+            max-width: 400px;
+            overflow: hidden;
+        }
+
+        .login-card__header {
+            background: var(--gradient-primary);
+            padding: 28px 24px 24px;
+            text-align: center;
+        }
+
+        .login-card__logo {
+            font-size: var(--text-hero);
+            font-weight: 700;
+            color: var(--color-white);
+            letter-spacing: -0.5px;
+            margin: 0 0 4px;
+        }
+
+        .login-card__tagline {
+            font-size: var(--text-base);
+            color: rgba(255, 255, 255, 0.80);
+            margin: 0;
+        }
+
+        .login-card__body {
+            padding: 28px 24px 24px;
+        }
+
+        .login-error {
+            background: var(--color-danger-light);
+            color: var(--color-danger-dark);
+            font-size: var(--text-base);
+            font-weight: 500;
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+            margin-bottom: 20px;
+        }
+
+        .login-field {
+            margin-bottom: 16px;
+        }
+
+        .login-field label {
+            display: block;
+            font-size: var(--text-md);
+            font-weight: 600;
+            color: var(--color-text-dark);
+            margin-bottom: 6px;
+        }
+
+        .login-field input {
+            width: 100%;
+            box-sizing: border-box;
+            background: var(--color-slate);
+            border: none;
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            font-size: var(--text-md);
+            font-family: var(--font-base);
+            color: var(--color-text-dark);
+            outline: none;
+            transition: box-shadow 0.15s;
+        }
+
+        .login-field input:focus {
+            box-shadow: 0 0 0 2px var(--color-primary-mid);
+        }
+
+        .login-field input::placeholder {
+            color: var(--color-text-sec);
+        }
+
+        .login-submit {
+            width: 100%;
+            height: 48px;
+            background: var(--gradient-primary);
+            color: var(--color-white);
+            font-size: var(--text-xl);
+            font-weight: 600;
+            font-family: var(--font-base);
+            border: none;
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            margin-top: 8px;
+            box-shadow: var(--shadow-fab);
+            transition: opacity 0.15s;
+        }
+
+        .login-submit:hover { opacity: 0.92; }
+        .login-submit:active { opacity: 0.85; }
+
+        .login-card__footer {
+            text-align: center;
+            padding: 0 24px 24px;
+            font-size: var(--text-base);
+            color: var(--color-text-sec);
+        }
+
+        .login-card__footer a {
+            color: var(--color-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .login-card__footer a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-    <div class="login-form">
-        <h1>Login</h1>
-        <?php if (isset($error)): ?>
-            <p style="color: red;"><?php echo htmlspecialchars($error); ?></p>
-        <?php endif; ?>
-        <form method="POST">
-            <div class="form-group">
-                <label for="username">Username:</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">Password:</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit" class="button">Login</button>
-        </form>
-        <p>New user? <a href="register.php">Register here</a></p>
+    <div class="login-card">
+        <div class="login-card__header">
+            <h1 class="login-card__logo">FamilyQuest</h1>
+            <p class="login-card__tagline">Tasks, goals &amp; rewards for the whole family</p>
+        </div>
+
+        <div class="login-card__body">
+            <?php if (isset($error)): ?>
+                <div class="login-error" role="alert"><?php echo htmlspecialchars($error); ?></div>
+            <?php endif; ?>
+
+            <form method="POST" novalidate>
+                <div class="login-field">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" placeholder="Enter your username" autocomplete="username" required>
+                </div>
+                <div class="login-field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="login-submit">Sign In</button>
+            </form>
+        </div>
+
+        <div class="login-card__footer">
+            New to FamilyQuest? <a href="register.php">Create an account</a>
+        </div>
     </div>
-  <script src="js/number-stepper.js" defer></script>
 </body>
 </html>
 
