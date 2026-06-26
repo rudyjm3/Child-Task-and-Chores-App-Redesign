@@ -658,38 +658,50 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
         }
         .button.secondary { background: #619fd0; }
         .button.danger { background: #e53935; }
-        /* Task card layout aligned to parent mockups */
+        /* Task card — mockup-aligned flat card with left strip */
         .task-card {
-            margin-bottom: 20px;
-            border: 1px solid #e3e7eb;
-            border-radius: 18px;
+            position: relative;
+            margin-bottom: 12px;
+            border: none;
+            border-radius: 16px;
             background: #fff;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
             overflow: hidden;
         }
-        .task-card[open] { box-shadow: 0 10px 24px rgba(0,0,0,0.12); }
+        .task-card[open] { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
         .task-card summary { list-style: none; cursor: pointer; }
         .task-card summary::-webkit-details-marker { display: none !important; }
         .task-card summary::marker { content: '' !important; }
         .task-card summary { list-style: none !important; }
         .task-card summary::-moz-list-bullet { list-style-type: none; }
-        .task-card-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; }
-        .task-card-summary-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
-        .task-card-icon { width: 46px; height: 46px; border-radius: 14px; background: #f5f7fb; color: #4caf50; display: inline-flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: inset 0 0 0 1px #eef1f5; flex: 0 0 auto; }
-        .task-card-title-block { min-width: 0; display: grid; gap: 4px; }
-        .task-card-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .task-card-title { font-weight: 700; font-size: 1.05rem; color: #37474f; }
-        .task-card-child-pill { background: #eef1f5; color: #607d8b; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
-        .task-card-subtitle { font-size: 0.9rem; color: #8a94a6; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .task-card-status { font-weight: 700; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: #fff3e0; color: #ef6c00; text-transform: uppercase; letter-spacing: 0.02em; }
+        /* The summary row: strip | body | right badges | chevron */
+        .task-card-summary { display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 20px; position: relative; }
+        /* Left color accent strip */
+        .task-card__strip { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--tc-strip, var(--color-primary)); border-radius: 16px 0 0 16px; }
+        /* Body: chip + title + subtitle stacked */
+        .task-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+        .task-card__title { font-weight: 700; font-size: 0.95rem; color: #1a202c; line-height: 1.3; }
+        .task-card__sub { font-size: 0.78rem; color: #8a94a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        /* Right column: pts badge + status badge */
+        .task-card__right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+        .task-card__pts { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: #f59e0b; font-size: 0.82rem; white-space: nowrap; }
+        /* Status badges */
+        .tc-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+        .tc-badge--pending  { background: #ede9fe; color: #7c3aed; }
+        .tc-badge--waiting  { background: #fef3c7; color: #92400e; }
+        .tc-badge--approved { background: #d1fae5; color: #065f46; }
+        .tc-badge--overdue  { background: #fee2e2; color: #991b1b; }
+        .tc-badge--expired  { background: #f1f5f9; color: #64748b; }
+        /* Expand chevron */
+        .task-card-chevron { color: #b0bec5; transition: transform 200ms ease; flex-shrink: 0; font-size: 0.72rem; margin-left: 2px; }
+        .task-card[open] .task-card-chevron { transform: rotate(180deg); }
+        /* Legacy compat — keep old title/sub classes working for child.css */
+        .task-card-title { font-weight: 700; font-size: 0.95rem; color: #1a202c; }
+        .task-card-subtitle { font-size: 0.78rem; color: #8a94a6; }
+        .task-card-status { font-weight: 700; font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; background: #fff3e0; color: #ef6c00; }
         .task-card-status.is-overdue { background: #ffebee; color: #d32f2f; }
         .task-card-status.is-success { background: #e8f5e9; color: #2e7d32; }
         .task-card-status.is-muted { background: #eceff1; color: #607d8b; }
-        .task-card-summary-right { display: flex; align-items: center; gap: 12px; }
-        .task-card-points { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: #f59e0b; background: #fffbeb; padding: 4px 10px; border-radius: 999px; }
-        .task-card-points i { color: #f59e0b; }
-        .task-card-chevron { color: #90a4ae; transition: transform 200ms ease; }
-        .task-card[open] .task-card-chevron { transform: rotate(90deg); }
         .task-card-body { padding: 16px 18px 18px; display: grid; gap: 12px; border-top: 1px solid #eef1f5; }
         .task-card-note { background: #f7f9fc; border: 1px solid #eef1f5; border-radius: 12px; padding: 12px 14px; color: #546e7a; }
         .task-card-note.text { display: flex; align-items: flex-start; gap: 8px; }
@@ -3224,6 +3236,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
           <div style="background:rgba(255,255,255,0.25);border-radius:99px;height:8px;overflow:hidden;margin-top:14px;">
             <div style="background:var(--color-white);height:100%;width:<?php echo $chProgress; ?>%;border-radius:99px;transition:width 0.4s;"></div>
           </div>
+          <div style="margin-top:8px;font-size:0.8rem;color:rgba(255,255,255,0.85);font-weight:600;"><?php echo $chTasksDone; ?> of <?php echo $chTotalForProgress; ?> done</div>
         </div>
         <?php endif; ?>
         <div class="task-list">
@@ -3430,29 +3443,29 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                             }
                             $childDisplayName = $task['child_display_name'] ?? ($childNameById[(int)($task['child_user_id'] ?? 0)] ?? '');
                         ?>
+                        <?php
+                            $tcCatColors = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                            $tcStripColor = $tcCatColors[$task['category'] ?? ''] ?? '#6D28D9';
+                        ?>
                         <details class="task-card" id="task-<?php echo (int) $task['id']; ?>" data-task-id="<?php echo $task['id']; ?>">
                             <summary class="task-card-summary">
-                                <div class="task-card-summary-left">
-                                    <div class="task-card-icon"><i class="fa-solid fa-list-check"></i></div>
-                                    <div class="task-card-title-block">
-                                        <div class="task-card-title-row">
-                                            <div class="task-card-title"><?php echo htmlspecialchars($task['title']); ?></div>
-                                            <?php if (!empty($childDisplayName)): ?>
-                                                <span class="task-card-child-pill"><?php echo htmlspecialchars($childDisplayName); ?></span>
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="task-card-subtitle">
-                                            <?php echo htmlspecialchars($dueDisplay); ?>
-                                            <?php if ($is_overdue): ?>
-                                                <span class="task-card-status is-overdue">Overdue</span>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
+                                <span class="task-card__strip" style="--tc-strip:<?php echo $tcStripColor; ?>;"></span>
+                                <div class="task-card__body">
+                                    <?php if ($isParentContext && !empty($childDisplayName)): ?>
+                                        <span class="child-name-chip"><?php echo htmlspecialchars($childDisplayName); ?></span>
+                                    <?php endif; ?>
+                                    <div class="task-card__title"><?php echo htmlspecialchars($task['title']); ?></div>
+                                    <div class="task-card__sub"><?php echo htmlspecialchars(ucfirst($task['category'] ?? 'Task')); ?> · <?php echo htmlspecialchars($dueDisplay); ?></div>
                                 </div>
-                                <div class="task-card-summary-right">
-                                    <div class="task-card-points"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?></div>
-                                    <span class="task-card-chevron"><i class="fa-solid fa-chevron-right"></i></span>
+                                <div class="task-card__right">
+                                    <span class="task-card__pts"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?> pts</span>
+                                    <?php if ($is_overdue): ?>
+                                        <span class="tc-badge tc-badge--overdue">Overdue</span>
+                                    <?php else: ?>
+                                        <span class="tc-badge tc-badge--pending">Pending</span>
+                                    <?php endif; ?>
                                 </div>
+                                <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
                             </summary>
                             <div class="task-card-body">
                                 <?php if (!empty($task['description'])): ?>
@@ -3625,26 +3638,25 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                     $dueDisplay = $timeText !== '' ? $timeText : ucfirst($timeOfDay);
                                 }
                               ?>
+                            <?php
+                                $tcCatColors2 = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                                $tcStripColor2 = $tcCatColors2[$task['category'] ?? ''] ?? '#6D28D9';
+                            ?>
                             <details class="task-card" id="task-<?php echo (int) $task['id']; ?>" data-task-id="<?php echo $task['id']; ?>">
                                 <summary class="task-card-summary">
-                                    <div class="task-card-summary-left">
-                                        <div class="task-card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
-                                        <div class="task-card-title-block">
-                                            <div class="task-card-title-row">
-                                                <div class="task-card-title"><?php echo htmlspecialchars($task['title']); ?></div>
-                                                <?php if (!empty($childDisplayName)): ?>
-                                                    <span class="task-card-child-pill"><?php echo htmlspecialchars($childDisplayName); ?></span>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="task-card-subtitle">
-                                                <span class="task-card-status">Pending Approval</span>
-                                            </div>
-                                        </div>
+                                    <span class="task-card__strip" style="--tc-strip:<?php echo $tcStripColor2; ?>;"></span>
+                                    <div class="task-card__body">
+                                        <?php if ($isParentContext && !empty($childDisplayName)): ?>
+                                            <span class="child-name-chip"><?php echo htmlspecialchars($childDisplayName); ?></span>
+                                        <?php endif; ?>
+                                        <div class="task-card__title"><?php echo htmlspecialchars($task['title']); ?></div>
+                                        <div class="task-card__sub"><?php echo htmlspecialchars(ucfirst($task['category'] ?? 'Task')); ?> · <?php echo htmlspecialchars($dueDisplay); ?></div>
                                     </div>
-                                    <div class="task-card-summary-right">
-                                        <div class="task-card-points"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?></div>
-                                        <span class="task-card-chevron"><i class="fa-solid fa-chevron-right"></i></span>
+                                    <div class="task-card__right">
+                                        <span class="task-card__pts"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?> pts</span>
+                                        <span class="tc-badge tc-badge--waiting">Waiting</span>
                                     </div>
+                                    <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
                                 </summary>
                                 <div class="task-card-body">
                                     <?php if (!empty($task['description'])): ?>
@@ -3790,26 +3802,25 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                 }
                                 $childDisplayName = $task['child_display_name'] ?? ($childNameById[(int)($task['child_user_id'] ?? 0)] ?? '');
                               ?>
+                            <?php
+                                $tcCatColors3 = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                                $tcStripColor3 = $tcCatColors3[$task['category'] ?? ''] ?? '#6D28D9';
+                            ?>
                             <details class="task-card" id="task-<?php echo (int) $task['id']; ?>" data-task-id="<?php echo $task['id']; ?>" data-approved-card data-approved-index="<?php echo $approvedIndex; ?>"<?php echo $hideApproved ? ' style="display:none;"' : ''; ?>>
                                 <summary class="task-card-summary">
-                                    <div class="task-card-summary-left">
-                                        <div class="task-card-icon"><i class="fa-regular fa-circle-check"></i></div>
-                                        <div class="task-card-title-block">
-                                            <div class="task-card-title-row">
-                                                <div class="task-card-title"><?php echo htmlspecialchars($task['title']); ?></div>
-                                                <?php if (!empty($childDisplayName)): ?>
-                                                    <span class="task-card-child-pill"><?php echo htmlspecialchars($childDisplayName); ?></span>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="task-card-subtitle">
-                                                <span class="task-card-status is-success">Approved</span>
-                                            </div>
-                                        </div>
+                                    <span class="task-card__strip" style="--tc-strip:<?php echo $tcStripColor3; ?>;"></span>
+                                    <div class="task-card__body">
+                                        <?php if ($isParentContext && !empty($childDisplayName)): ?>
+                                            <span class="child-name-chip"><?php echo htmlspecialchars($childDisplayName); ?></span>
+                                        <?php endif; ?>
+                                        <div class="task-card__title"><?php echo htmlspecialchars($task['title']); ?></div>
+                                        <div class="task-card__sub"><?php echo htmlspecialchars(ucfirst($task['category'] ?? 'Task')); ?> · <?php echo htmlspecialchars($dueDisplay); ?></div>
                                     </div>
-                                    <div class="task-card-summary-right">
-                                        <div class="task-card-points"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?></div>
-                                        <span class="task-card-chevron"><i class="fa-solid fa-chevron-right"></i></span>
+                                    <div class="task-card__right">
+                                        <span class="task-card__pts"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?> pts</span>
+                                        <span class="tc-badge tc-badge--approved">Approved</span>
                                     </div>
+                                    <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
                                 </summary>
                                 <div class="task-card-body">
                                     <?php if (!empty($task['description'])): ?>
@@ -3888,23 +3899,25 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                 <?php
                                     $dueLabel = !empty($task['due_date']) ? date('m/d/Y', strtotime($task['due_date'])) : 'No due date';
                                 ?>
+                                <?php
+                                    $tcCatColors4 = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                                    $tcStripColor4 = $tcCatColors4[$task['category'] ?? ''] ?? '#94a3b8';
+                                ?>
                                 <details class="task-card" id="task-<?php echo (int) $task['id']; ?>" data-task-id="<?php echo $task['id']; ?>">
                                     <summary class="task-card-summary">
-                                        <div class="task-card-summary-left">
-                                            <div class="task-card-icon"><i class="fa-regular fa-calendar-xmark"></i></div>
-                                            <div class="task-card-title-block">
-                                                <div class="task-card-title-row">
-                                                    <div class="task-card-title"><?php echo htmlspecialchars($task['title']); ?></div>
-                                                </div>
-                                                <div class="task-card-subtitle">
-                                                    <span class="task-card-status is-muted">Expired</span>
-                                                </div>
-                                            </div>
+                                        <span class="task-card__strip" style="--tc-strip:<?php echo $tcStripColor4; ?>;opacity:0.5;"></span>
+                                        <div class="task-card__body">
+                                            <?php if ($isParentContext && !empty($task['child_display_name'])): ?>
+                                                <span class="child-name-chip"><?php echo htmlspecialchars($task['child_display_name']); ?></span>
+                                            <?php endif; ?>
+                                            <div class="task-card__title" style="opacity:0.6;"><?php echo htmlspecialchars($task['title']); ?></div>
+                                            <div class="task-card__sub"><?php echo htmlspecialchars(ucfirst($task['category'] ?? 'Task')); ?> · <?php echo htmlspecialchars($dueLabel); ?></div>
                                         </div>
-                                        <div class="task-card-summary-right">
-                                            <div class="task-card-points"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?></div>
-                                            <span class="task-card-chevron"><i class="fa-solid fa-chevron-right"></i></span>
+                                        <div class="task-card__right">
+                                            <span class="task-card__pts" style="opacity:0.5;"><i class="fa-solid fa-coins"></i> <?php echo (int)$task['points']; ?> pts</span>
+                                            <span class="tc-badge tc-badge--expired">Expired</span>
                                         </div>
+                                        <span class="task-card-chevron"><i class="fa-solid fa-chevron-down"></i></span>
                                     </summary>
                                     <div class="task-card-body">
                                         <?php if (!empty($task['description'])): ?>
