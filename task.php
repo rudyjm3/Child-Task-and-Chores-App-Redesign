@@ -3165,9 +3165,6 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
           <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
             <i class="fa-solid fa-gift"></i><span>Rewards Shop</span>
           </a>
-          <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
-            <i class="fa-solid fa-user"></i><span>Profile</span>
-          </a>
         </nav>
       </div>
     </header>
@@ -3207,9 +3204,6 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
         </a>
         <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
           <i class="fa-solid fa-gift"></i><span>Rewards Shop</span>
-        </a>
-        <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
-          <i class="fa-solid fa-user"></i><span>Profile</span>
         </a>
       </nav>
     </header>
