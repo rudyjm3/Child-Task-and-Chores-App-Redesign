@@ -1382,6 +1382,20 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
           </button>
         </div>
         <?php endif; ?>
+        <?php
+          $gfFilter = $isParentContext ? ($_GET['status'] ?? '') : '';
+          $displayActiveGoals = $active_goals;
+          $displayCompletedGoals = $completed_goals;
+          if ($gfFilter === 'active') {
+              $displayActiveGoals = array_filter($active_goals, fn($g) => $g['status'] === 'active');
+              $displayCompletedGoals = [];
+          } elseif ($gfFilter === 'pending_approval') {
+              $displayActiveGoals = array_filter($active_goals, fn($g) => $g['status'] === 'pending_approval');
+              $displayCompletedGoals = [];
+          } elseif ($gfFilter === 'completed') {
+              $displayActiveGoals = [];
+          }
+        ?>
         <div class="goal-list">
             <h2><?php echo (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) ? 'Created Goals' : 'Your Goals'; ?></h2>
             <?php if (empty($goals)): ?>
@@ -1389,13 +1403,13 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
             <?php else: ?>
                 <details class="task-section-toggle" open>
                     <summary>
-                        <span class="task-section-title">Active Goals <span class="task-count-badge"><?php echo count($active_goals); ?></span></span>
+                        <span class="task-section-title">Active Goals <span class="task-count-badge"><?php echo count($displayActiveGoals); ?></span></span>
                     </summary>
                     <div class="task-section-content">
-                        <?php if (empty($active_goals)): ?>
+                        <?php if (empty($displayActiveGoals)): ?>
                             <p>No active goals.</p>
                         <?php else: ?>
-                            <?php foreach ($active_goals as $goal): ?>
+                            <?php foreach ($displayActiveGoals as $goal): ?>
                                 <?php
                                 $goalChildId = (int) ($goal['child_user_id'] ?? ($_SESSION['user_id'] ?? 0));
                                 $goalProgressData = getGoalProgressSnapshot($goal, $goalChildId);
@@ -1607,13 +1621,13 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                 </details>
                 <details class="task-section-toggle">
                     <summary>
-                        <span class="task-section-title">Completed Goals <span class="task-count-badge"><?php echo count($completed_goals); ?></span></span>
+                        <span class="task-section-title">Completed Goals <span class="task-count-badge"><?php echo count($displayCompletedGoals); ?></span></span>
                     </summary>
                     <div class="task-section-content">
-                        <?php if (empty($completed_goals)): ?>
+                        <?php if (empty($displayCompletedGoals)): ?>
                             <p>No completed goals.</p>
                         <?php else: ?>
-                    <?php foreach ($completed_goals as $goal): ?>
+                    <?php foreach ($displayCompletedGoals as $goal): ?>
                         <?php
                         $goalChildId = (int) ($goal['child_user_id'] ?? ($_SESSION['user_id'] ?? 0));
                         $goalProgressData = getGoalProgressSnapshot($goal, $goalChildId);
