@@ -1,4 +1,4 @@
-# FamilyQuest — UX/UI Design System & Screen Specifications
+# Child Task App — UX/UI Design System & Screen Specifications
 
 > **Figma source:** https://www.figma.com/design/taPoxMa7BoFwt8BD3DIsX0  
 > **Stack:** PHP · MySQL · HTML · CSS · Vanilla JS  
@@ -719,7 +719,7 @@ Used on both Parent Dashboard (quick glance row) and Goals Child View (Active / 
 ```
 
 **Sidebar:**
-- Top 80px: gradient logo bar (primary→primaryMid). App name "FamilyQuest" 18px Bold white.
+- Top 80px: gradient logo bar (primary→primaryMid). App icon + "Family Dashboard" 18px Bold white.
 - Nav items (7): each 208×44px, 12px radius. Active: primaryLight bg + 4px primary left indicator + semi-bold primary text. Inactive: transparent bg + 30% opacity icon + secondary text.
 - Nav order: Dashboard · Children · Tasks · Goals · Rewards · Routines · Settings
 - Bottom: user card (208×64, slate bg, 16px radius). Avatar circle + "Parent Name" semi-bold + "Parent Account" secondary.

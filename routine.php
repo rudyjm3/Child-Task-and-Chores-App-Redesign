@@ -1949,9 +1949,6 @@ margin-bottom: 20px;}
           <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
             <i class="fa-solid fa-gift"></i><span>Rewards</span>
           </a>
-          <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
-            <i class="fa-solid fa-user"></i><span>Profile</span>
-          </a>
         </nav>
       </div>
     </header>
@@ -1991,9 +1988,6 @@ margin-bottom: 20px;}
         </a>
         <a class="nav-link<?php echo $rewardsActive ? ' is-active' : ''; ?>" href="rewards.php"<?php echo $rewardsActive ? ' aria-current="page"' : ''; ?>>
           <i class="fa-solid fa-gift"></i><span>Rewards</span>
-        </a>
-        <a class="nav-link<?php echo $profileActive ? ' is-active' : ''; ?>" href="profile.php?self=1"<?php echo $profileActive ? ' aria-current="page"' : ''; ?>>
-          <i class="fa-solid fa-user"></i><span>Profile</span>
         </a>
       </nav>
     </header>

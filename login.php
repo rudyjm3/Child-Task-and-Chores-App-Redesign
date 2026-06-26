@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login — FamilyQuest</title>
+    <title>Login — Family Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/main.css?v=3.27.0">
@@ -170,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
     <div class="login-card">
         <div class="login-card__header">
-            <h1 class="login-card__logo">FamilyQuest</h1>
+            <h1 class="login-card__logo">Family Dashboard</h1>
             <p class="login-card__tagline">Tasks, goals &amp; rewards for the whole family</p>
         </div>
 
@@ -193,7 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <div class="login-card__footer">
-            New to FamilyQuest? <a href="register.php">Create an account</a>
+            New to Family Dashboard? <a href="register.php">Create an account</a>
         </div>
     </div>
 </body>
