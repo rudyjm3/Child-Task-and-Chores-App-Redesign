@@ -814,7 +814,7 @@ foreach ($children as $child) {
         .page { max-width: 960px; margin: 20px auto; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
         h1, h2 { margin-top: 0; }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 20px;}
-        .card { background: #fafbff; border: 1px solid #e4e7ef; border-radius: 8px; padding: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+        .card { display: block; background: #fafbff; border: 1px solid #e4e7ef; border-radius: 8px; padding: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); overflow: visible; position: static; gap: 0; align-items: initial; }
         .shop-parent-card { padding: 0; background: #e9f9ff; border: 2px solid #d7f1fb; overflow: hidden; }
         .shop-parent-header { background: #79d1e6; color: #fff; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         .shop-parent-title { display: grid; gap: 4px; }
@@ -957,6 +957,7 @@ foreach ($children as $child) {
 </head>
 <body>
     <?php $pageHeading = 'Rewards Shop'; include __DIR__ . '/includes/page_header.php'; ?>
+    <main class="page-wrapper" style="padding: 0 20px 40px;">
 
         <?php foreach ($messages as $msg): ?>
             <div class="message"><?php echo htmlspecialchars($msg); ?></div>
@@ -1437,6 +1438,7 @@ $hasRecentMore = $recentTotal > $recentLimit;
             </div>
         </div>
     </div>
+    </main>
     <?php include __DIR__ . '/includes/page_footer.php'; ?>
   <script src="js/number-stepper.js" defer></script>
 <?php if (!empty($isParentNotificationUser)): ?>
@@ -1445,7 +1447,6 @@ $hasRecentMore = $recentTotal > $recentLimit;
 <?php if (!empty($isChildNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_child.php'; ?>
 <?php endif; ?>
-</body>
 <div class="modal-backdrop" id="modal-backdrop" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true">
         <header>
@@ -1853,6 +1854,7 @@ $hasRecentMore = $recentTotal > $recentLimit;
         }
     })();
 </script>
+</body>
 </html>
 
 
