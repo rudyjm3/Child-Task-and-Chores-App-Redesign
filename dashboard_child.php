@@ -632,18 +632,28 @@ function renderStreakCheckSvg($suffix) {
                     const color = stripColors[item.icon] || 'var(--color-primary)';
                     let actionHtml = '';
                     if (item.completed && item.overdue) {
-                        actionHtml = '<span class="btn-complete-check" title="Done (late)"><i class="fa-solid fa-check"></i></span>';
+                        actionHtml = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:#d1fae5;color:#065f46;">Done</span>';
                     } else if (item.completed) {
-                        actionHtml = '<span class="btn-complete-check"><i class="fa-solid fa-check"></i></span>';
+                        actionHtml = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:#d1fae5;color:#065f46;">Done</span>';
                     } else if (item.overdue) {
-                        actionHtml = '<a href="' + item.link + '" class="btn-complete" style="background:var(--color-danger);">Overdue!</a>';
+                        actionHtml = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:#fee2e2;color:#991b1b;">Overdue</span>';
                     } else {
-                        actionHtml = '<a href="' + item.link + '" class="btn-complete">Complete!</a>';
+                        actionHtml = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:#ede9fe;color:#7c3aed;">To Do</span>';
                     }
                     const doneClass = item.completed ? ' child-task-card--done' : '';
+                    // Build icon circle with light category color background
+                    const colorMap = {
+                        'var(--color-cat-routine)': '#e6f7f5',
+                        'var(--color-primary)': '#f3edff',
+                        'var(--color-cat-learning)': '#f3edff',
+                    };
+                    const iconBg = item.completed ? '#d1fae5' : (colorMap[color] || '#f3edff');
+                    const iconContent = item.completed
+                        ? '<i class="fa-solid fa-check" style="color:#059669;font-size:14px;"></i>'
+                        : '';
                     return '<div class="child-task-card' + doneClass + '">' +
                         '<span class="child-task-card__strip" style="background:' + color + '"></span>' +
-                        '<span class="child-task-card__icon" style="background:' + color + '"></span>' +
+                        '<span class="child-task-card__icon" style="background:' + iconBg + ';opacity:1;border:2px solid ' + color + '33;">' + iconContent + '</span>' +
                         '<div class="child-task-card__body">' +
                         '<div class="child-task-card__title">' + item.title + '</div>' +
                         '<div class="child-task-card__sub">' + item.type + (item.time_label ? ' · ' + item.time_label : '') + '</div>' +

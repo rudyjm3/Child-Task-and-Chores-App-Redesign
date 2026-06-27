@@ -164,6 +164,14 @@
   flex-shrink: 0;
 }
 
+.child-task-card__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
 .btn-complete {
   background: var(--color-primary);
   color: var(--color-white);

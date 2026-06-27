@@ -1104,6 +1104,40 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
         .icon-button:hover {color: #7a7a7a; }
         /* .icon-button.danger { color: #d32f2f; }
         .icon-button.danger:hover { background: rgba(211,47,47,0.12); } */
+        /* ── Mockup-aligned goal card layout ── */
+        .goal-card {
+            position: relative; overflow: hidden;
+            background: #fff; border-radius: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            padding: 14px 14px 14px 20px;
+            display: flex; flex-direction: row; align-items: center; gap: 12px;
+            min-height: 0;
+        }
+        .gcard__strip { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--gc-strip, #6D28D9); border-radius: 16px 0 0 16px; }
+        .gcard__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+        .gcard__title { font-weight: 700; font-size: 0.95rem; color: #1a202c; line-height: 1.3; }
+        .gcard__bar-wrap { height: 8px; border-radius: 4px; background: #edf1f7; overflow: hidden; }
+        .gcard__bar-fill { height: 100%; border-radius: 4px; background: var(--color-primary, #6D28D9); transition: width 0.4s; }
+        .gcard__progress-label { font-size: 0.75rem; color: #8a94a6; }
+        .reward-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: #e6f7f5; color: #0D9488; font-size: 0.72rem; font-weight: 700; align-self: flex-start; }
+        .gcard__right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+        .gcard__pct-large { font-size: 1.6rem; font-weight: 700; color: var(--color-primary, #6D28D9); line-height: 1; }
+        .gc-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+        .gc-badge--active   { background: #ede9fe; color: #7c3aed; }
+        .gc-badge--ontrack  { background: #d1fae5; color: #065f46; }
+        .gc-badge--waiting  { background: #fef3c7; color: #92400e; }
+        .gc-badge--done     { background: #d1fae5; color: #065f46; }
+        .gc-badge--denied   { background: #fee2e2; color: #991b1b; }
+        /* Child goal — ring replaces right column */
+        .gcard--child { align-items: flex-start; }
+        .gcard--child .gcard__right { display: none; }
+        /* Approved/Pending goal action row below card */
+        .goal-action-row { display: flex; gap: 8px; margin-top: 8px; }
+        .goal-action-row .button { flex: 1; margin: 0; border-radius: 10px; padding: 10px; font-weight: 700; }
+        .goal-section-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 8px; }
+        .goal-section-title { font-size: 1rem; font-weight: 700; color: #37474f; display: inline-flex; align-items: center; gap: 8px; }
+        .goal-count-badge { background: #7c3aed; color: #fff; border-radius: 12px; padding: 2px 8px; font-size: 0.78rem; font-weight: 700; }
+        .goal-section-list { display: grid; gap: 10px; margin-bottom: 24px; }
         .child-theme .goal-progress-bar {
             height: 30px;
             background: #ffe9c6;
@@ -1343,22 +1377,64 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
           $ghDoneCount = count($completed_goals ?? []);
           $ghTotalCount = $ghActiveCount + $ghDoneCount;
         ?>
-        <div class="gradient-hero-header" style="min-height:130px;">
+        <div class="gradient-hero-header" style="min-height:140px;">
           <div class="gradient-hero-header__title">My Goals</div>
           <div class="gradient-hero-header__sub">Chase your goals &amp; earn rewards!</div>
-          <div style="display:flex;gap:12px;margin-top:16px;">
-            <div style="background:rgba(255,255,255,0.2);border-radius:var(--radius-md);padding:8px 14px;text-align:center;">
-              <div style="font-size:var(--text-2xl);font-weight:700;color:var(--color-white);"><?php echo $ghActiveCount; ?></div>
-              <div style="font-size:var(--text-sm);color:rgba(255,255,255,0.8);">Active</div>
+          <div style="display:flex;gap:16px;margin-top:16px;align-items:center;">
+            <div style="text-align:center;">
+              <div style="width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:var(--color-white);margin:0 auto 4px;"><i class="fa-solid fa-bullseye"></i></div>
+              <div style="font-size:0.7rem;color:rgba(255,255,255,0.85);font-weight:600;"><?php echo $ghActiveCount; ?> Active</div>
             </div>
-            <div style="background:rgba(255,255,255,0.2);border-radius:var(--radius-md);padding:8px 14px;text-align:center;">
-              <div style="font-size:var(--text-2xl);font-weight:700;color:var(--color-gold);"><?php echo $ghDoneCount; ?></div>
-              <div style="font-size:var(--text-sm);color:rgba(255,255,255,0.8);">Completed</div>
+            <div style="text-align:center;">
+              <div style="width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:var(--color-gold);margin:0 auto 4px;"><i class="fa-solid fa-trophy"></i></div>
+              <div style="font-size:0.7rem;color:rgba(255,255,255,0.85);font-weight:600;"><?php echo $ghDoneCount; ?> Done</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:rgba(255,255,255,0.8);margin:0 auto 4px;"><i class="fa-solid fa-star"></i></div>
+              <div style="font-size:0.7rem;color:rgba(255,255,255,0.85);font-weight:600;"><?php echo $ghTotalCount; ?> Total</div>
             </div>
           </div>
         </div>
+        <?php
+          $gcStatActive = count(array_filter($active_goals ?? [], fn($g) => ($g['status'] ?? '') !== 'pending_approval'));
+          $gcStatAlmost = count(array_filter($active_goals ?? [], fn($g) => ($g['status'] ?? '') === 'pending_approval'));
+          $gcStatDone = count($completed_goals ?? []);
+        ?>
+        <div style="display:flex;gap:8px;padding:0 var(--mobile-pad) 4px;">
+          <div style="flex:1;background:#fff;border-radius:12px;padding:10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+            <div style="font-size:1.3rem;font-weight:700;color:#6D28D9;"><?php echo $gcStatActive; ?></div>
+            <div style="font-size:0.7rem;color:#8a94a6;font-weight:600;">Active</div>
+          </div>
+          <div style="flex:1;background:#fffbeb;border-radius:12px;padding:10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+            <div style="font-size:1.3rem;font-weight:700;color:#f59e0b;"><?php echo $gcStatAlmost; ?></div>
+            <div style="font-size:0.7rem;color:#8a94a6;font-weight:600;">Almost!</div>
+          </div>
+          <div style="flex:1;background:#d1fae5;border-radius:12px;padding:10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+            <div style="font-size:1.3rem;font-weight:700;color:#065f46;"><?php echo $gcStatDone; ?></div>
+            <div style="font-size:0.7rem;color:#8a94a6;font-weight:600;">Done</div>
+          </div>
+        </div>
         <?php else: ?>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px var(--mobile-pad) 0;">
+        <?php
+          $gsActiveCount = count($active_goals ?? []);
+          $gsPendingCount = count(array_filter($active_goals ?? [], fn($g) => ($g['status'] ?? '') === 'pending_approval'));
+          $gsCompletedCount = count($completed_goals ?? []);
+        ?>
+        <div style="background:linear-gradient(135deg,#6D28D9,#A78BFA);border-radius:16px;margin:12px var(--mobile-pad);padding:14px 0;display:flex;">
+          <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.2);padding:6px 0;">
+            <div style="font-size:1.5rem;font-weight:700;color:#fff;"><?php echo $gsActiveCount; ?></div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);font-weight:600;">Active</div>
+          </div>
+          <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.2);padding:6px 0;">
+            <div style="font-size:1.5rem;font-weight:700;color:#fbbf24;"><?php echo $gsPendingCount; ?></div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);font-weight:600;">Pending</div>
+          </div>
+          <div style="flex:1;text-align:center;padding:6px 0;">
+            <div style="font-size:1.5rem;font-weight:700;color:#6ee7b7;"><?php echo $gsCompletedCount; ?></div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);font-weight:600;">Completed</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px var(--mobile-pad) 0;">
           <div class="filter-chip-row" style="display:flex;gap:8px;flex-wrap:wrap;">
             <?php
               $gfChips = ['' => 'All', 'active' => 'Active', 'pending_approval' => 'Pending', 'completed' => 'Completed'];
@@ -1480,139 +1556,143 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                                 ];
                                 $goalPayloadJson = htmlspecialchars(json_encode($goalPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
                                 ?>
-                                    <div class="goal-card" id="goal-<?php echo (int) $goal['id']; ?>">
-                                    <div class="goal-card-header">
-                                        <h3 class="goal-card-title-text"><?php echo htmlspecialchars($goal['title']); ?></h3>
-                                        <div class="goal-card-badges">
+                                    <?php
+                                        $gcCatColors = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                                        $gcStripColor = $gcCatColors[$goal['task_category'] ?? ''] ?? '#6D28D9';
+                                        $gcDaysLeft = null;
+                                        if ($endStamp && $endStamp > time()) {
+                                            $gcDaysLeft = (int) ceil(($endStamp - time()) / 86400);
+                                        }
+                                        $gcIsChild = !$isParentContext;
+                                        $gcCircumference = round(2 * M_PI * 28, 2);
+                                        $gcDashOffset = round($gcCircumference * (1 - $progressPercent / 100), 2);
+                                        if ($displayStatus === 'pending_approval') {
+                                            $gcBadgeClass = 'gc-badge--waiting'; $gcBadgeLabel = 'Approve?';
+                                        } elseif ($displayStatus === 'completed') {
+                                            $gcBadgeClass = 'gc-badge--done'; $gcBadgeLabel = 'Done';
+                                        } elseif ($progressPercent >= 80) {
+                                            $gcBadgeClass = 'gc-badge--ontrack'; $gcBadgeLabel = 'On Track';
+                                        } else {
+                                            $gcBadgeClass = 'gc-badge--ontrack'; $gcBadgeLabel = 'On Track';
+                                        }
+                                    ?>
+                                    <div class="goal-card<?php echo $gcIsChild ? ' gcard--child' : ''; ?>" id="goal-<?php echo (int) $goal['id']; ?>">
+                                        <span class="gcard__strip" style="--gc-strip:<?php echo $gcStripColor; ?>;"></span>
+                                        <div class="gcard__body">
+                                            <?php if ($isParentContext && !empty($goal['child_display_name'])): ?>
+                                                <span class="child-name-chip"><?php echo htmlspecialchars($goal['child_display_name']); ?></span>
+                                            <?php endif; ?>
+                                            <div class="gcard__title"><?php echo htmlspecialchars($goal['title']); ?></div>
+                                            <div class="gcard__bar-wrap">
+                                                <div class="gcard__bar-fill" style="width:<?php echo (int)$progressPercent; ?>%;background:<?php echo $gcStripColor; ?>;"></div>
+                                            </div>
+                                            <div class="gcard__progress-label"><?php echo htmlspecialchars($progressValue); ?> &middot; <?php echo (int)$progressPercent; ?>%</div>
+                                            <?php if (!empty($goal['reward_title']) && $goal['reward_title'] !== 'None'): ?>
+                                                <span class="reward-chip"><i class="fa-solid fa-gift"></i> <?php echo htmlspecialchars($goal['reward_title']); ?></span>
+                                            <?php endif; ?>
                                             <?php if (!empty($goal['points_awarded'])): ?>
-                                                <span class="goal-points-badge"><?php echo (int) $goal['points_awarded']; ?></span>
+                                                <span class="reward-chip" style="background:#fffbeb;color:#f59e0b;"><i class="fa-solid fa-coins"></i> <?php echo (int)$goal['points_awarded']; ?> pts</span>
                                             <?php endif; ?>
-                                            <?php if ($displayStatus === 'active'): ?>
-                                                <span class="goal-status-badge active">Active</span>
+                                            <?php if ($gcIsChild && $gcDaysLeft !== null): ?>
+                                                <span style="font-size:0.72rem;color:#8a94a6;"><?php echo $gcDaysLeft; ?>d left</span>
+                                            <?php endif; ?>
+                                            <?php if ($gcIsChild && $displayStatus === 'pending_approval'): ?>
+                                                <div style="margin-top:6px;"><span style="font-size:0.72rem;color:#f59e0b;font-weight:600;">Waiting for approval...</span></div>
+                                            <?php elseif ($gcIsChild && $goal['status'] === 'active' && $progressPercent >= 100): ?>
+                                                <form method="POST" action="goal.php" style="margin-top:6px;">
+                                                    <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                                    <button type="submit" name="request_completion" class="button" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#fff;border:none;border-radius:999px;padding:8px 20px;font-weight:700;font-size:0.85rem;cursor:pointer;min-height:38px;">Claim!</button>
+                                                </form>
+                                            <?php elseif ($gcIsChild && $goal['status'] === 'active' && ($goal['goal_type'] ?? '') === 'manual'): ?>
+                                                <form method="POST" action="goal.php" style="margin-top:6px;">
+                                                    <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                                    <button type="submit" name="request_completion" class="button" style="background:linear-gradient(135deg,#6D28D9,#A78BFA);color:#fff;border:none;border-radius:999px;padding:8px 20px;font-weight:700;font-size:0.85rem;cursor:pointer;min-height:38px;">Mark Done</button>
+                                                </form>
                                             <?php endif; ?>
                                         </div>
-                                    </div>
-                                    <?php if (!empty($goal['description'])): ?>
-                                        <p class="goal-description"><span class="goal-info-label"><i class="fa-solid fa-message"></i></span><?php echo nl2br(htmlspecialchars($goal['description'])); ?></p>
-                                    <?php endif; ?>
-                                    <p class="goal-info-row"><span class="goal-info-label"><i class="fa-regular fa-calendar-days"></i></span><?php echo htmlspecialchars($goal['start_date_formatted']); ?> to <?php echo htmlspecialchars($goal['end_date_formatted']); ?></p>
-                                    <p class="goal-info-row"><span class="goal-info-label"><i class="fa-solid fa-gift"></i></span><?php echo htmlspecialchars($goal['reward_title'] ?? 'None'); ?></p>
-                                    <?php if (!empty($goal['creator_display_name'])): ?>
-                                        <p class="goal-info-row"><span class="goal-info-label"><i class="fa-solid fa-user-pen"></i></span><?php echo htmlspecialchars($goal['creator_display_name']); ?></p>
-                                    <?php endif; ?>
-                                    <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                        <div class="goal-info-row goal-assignee"><span class="goal-info-label"><i class="fa-solid fa-user"></i></span><?php echo htmlspecialchars($goal['child_display_name']); ?></div>
-                                    <?php endif; ?>
-                                    <div class="goal-progress">
-                                        <div class="goal-progress-header">
-                                            <span><?php echo htmlspecialchars($goalTypeLabel); ?></span>
-                                            <span><?php echo htmlspecialchars($progressValue); ?></span>
+                                        <?php if ($isParentContext): ?>
+                                        <div class="gcard__right">
+                                            <span class="gc-badge <?php echo $gcBadgeClass; ?>"><?php echo $gcBadgeLabel; ?></span>
+                                            <span class="gcard__pct-large" style="color:<?php echo $gcStripColor; ?>;"><?php echo (int)$progressPercent; ?>%</span>
                                         </div>
-                                        <div class="goal-progress-bar has-steps"<?php echo $progressSteps > 0 ? ' style="--goal-progress-steps: ' . (int) $progressSteps . ';"' : ''; ?>>
-                                            <span style="width: <?php echo (int) $progressPercent; ?>%;"></span>
+                                        <?php else: ?>
+                                        <div style="position:relative;width:70px;height:70px;flex-shrink:0;">
+                                            <svg viewBox="0 0 70 70" width="70" height="70">
+                                                <circle fill="none" stroke="#e9ecf3" stroke-width="7" cx="35" cy="35" r="28"/>
+                                                <circle fill="none" stroke="<?php echo $gcStripColor; ?>" stroke-width="7" stroke-linecap="round" cx="35" cy="35" r="28"
+                                                    stroke-dasharray="<?php echo $gcCircumference; ?>"
+                                                    stroke-dashoffset="<?php echo $gcDashOffset; ?>"
+                                                    transform="rotate(-90 35 35)"/>
+                                            </svg>
+                                            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:0.85rem;font-weight:700;color:#1a202c;"><?php echo (int)$progressPercent; ?>%</div>
                                         </div>
-                                        <?php if (!empty($goalProgress['next_needed'])): ?>
-                                            <div class="goal-next-needed">Next: <?php echo htmlspecialchars($goalProgress['next_needed']); ?></div>
                                         <?php endif; ?>
-                                        <div class="goal-meta">
-                                            <?php if (!empty($goal['task_targets'])): ?>
-                                                <?php $taskCounts = $goalProgress['task_counts'] ?? []; ?>
-                                                <div class="goal-routine-badges" aria-label="Task completion counts">
-                                                    <?php foreach ($goal['task_targets'] as $task): ?>
-                                                        <?php
-                                                            $taskId = (int) ($task['id'] ?? 0);
-                                                            $taskTitle = $task['title'] ?? '';
-                                                            $taskCount = $taskId ? (int) ($taskCounts[$taskId] ?? 0) : 0;
-                                                        ?>
-                                                        <?php if ($taskTitle !== ''): ?>
-                                                            <span class="goal-routine-badge">
-                                                                <?php echo htmlspecialchars($taskTitle); ?>
-                                                                <span class="goal-routine-count"><?php echo $taskCount; ?></span>
-                                                            </span>
-                                                        <?php endif; ?>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                            <?php endif; ?>
-                                            <?php if (!empty($goal['routine_targets'])): ?>
-                                                <div class="goal-routine-badges" aria-label="Routine completion counts">
-                                                    <?php foreach ($goal['routine_targets'] as $routine): ?>
-                                                        <?php $routineCount = $goalProgress['routine_counts'][$routine['id']] ?? 0; ?>
-                                                        <span class="goal-routine-badge">
-                                                            <?php echo htmlspecialchars($routine['title']); ?>
-                                                            <span class="goal-routine-count"><?php echo (int) $routineCount; ?></span>
-                                                        </span>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                            <?php endif; ?>
-                                            <?php if (!empty($goal['task_category'])): ?>
-                                                <span class="goal-detail-pill">Category: <?php echo htmlspecialchars(ucfirst($goal['task_category'])); ?></span>
-                                            <?php endif; ?>
-                                            <?php if (($goalProgress['goal_type'] ?? '') === 'routine_streak'): ?>
-                                                <span class="goal-detail-pill">Streak: <?php echo (int) ($goal['streak_required'] ?? 0); ?> days</span>
-                                            <?php elseif (in_array(($goalProgress['goal_type'] ?? ''), ['routine_count', 'task_quota'], true)): ?>
-                                                <?php if ($goalWindowDays !== null): ?>
-                                                    <span class="goal-detail-pill">Target days: <?php echo (int) $goalWindowDays; ?></span>
-                                                <?php else: ?>
-                                                    <span class="goal-detail-pill">Target count: <?php echo (int) ($goal['target_count'] ?? 0); ?></span>
-                                                <?php endif; ?>
-                                            <?php endif; ?>
-                                            <?php if (($goal['award_mode'] ?? 'both') === 'reward' && empty($goal['points_awarded']) && !empty($goal['reward_title'])): ?>
-                                                <span class="goal-detail-pill">Reward: <?php echo htmlspecialchars($goal['reward_title']); ?></span>
-                                            <?php endif; ?>
-                                            <?php if (!empty($goal['require_on_time'])): ?>
-                                                <span class="goal-detail-pill">On-time required</span>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                    <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                        <div class="goal-card-footer">
-                                            <div class="task-card-menu" data-goal-menu>
+                                        <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
+                                            <div class="task-card-menu" data-goal-menu style="align-self:flex-start;">
                                                 <button type="button" class="task-card-menu-toggle" aria-label="Open goal actions" data-goal-menu-toggle>
                                                     <i class="fa-solid fa-ellipsis-vertical"></i>
                                                 </button>
                                                 <div class="task-card-menu-list">
                                                     <button type="button" class="task-card-menu-item" data-goal-edit-open data-goal-payload="<?php echo $goalPayloadJson; ?>">
-                                                        <i class="fa-solid fa-pen"></i>
-                                                        Edit Goal
+                                                        <i class="fa-solid fa-pen"></i> Edit Goal
                                                     </button>
                                                     <button type="button" class="task-card-menu-item" data-goal-duplicate data-goal-payload="<?php echo $goalPayloadJson; ?>">
-                                                        <i class="fa-solid fa-clone"></i>
-                                                        Duplicate Goal
+                                                        <i class="fa-solid fa-clone"></i> Duplicate Goal
                                                     </button>
                                                     <form method="POST" action="goal.php" onsubmit="return confirm('Archive this goal?');">
                                                         <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
                                                         <button type="submit" name="delete_goal" class="task-card-menu-item danger">
-                                                            <i class="fa-solid fa-box-archive"></i>
-                                                            Archive Goal
+                                                            <i class="fa-solid fa-box-archive"></i> Archive Goal
                                                         </button>
                                                     </form>
                                                 </div>
                                             </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id']) && $goal['status'] === 'pending_approval'): ?>
+                                        <div class="goal-action-row">
+                                            <form method="POST" action="goal.php" style="flex:1;display:contents;">
+                                                <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                                <button type="submit" name="approve_goal" class="button" style="flex:1;">Approve</button>
+                                            </form>
+                                            <form method="POST" action="goal.php" style="flex:1;display:contents;">
+                                                <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                                <button type="submit" name="reject_goal" class="button danger" style="flex:1;">Deny</button>
+                                            </form>
                                         </div>
                                     <?php endif; ?>
-                                    <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                        <?php if ($goal['status'] === 'pending_approval'): ?>
-                                            <form method="POST" action="goal.php">
-                                                <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
-                                                <button type="submit" name="approve_goal" class="button">Approve</button>
-                                                <button type="submit" name="reject_goal" class="button" style="background-color: #f44336;">Deny</button>
-                                                <div class="reject-comment">
-                                                    <label for="rejection_comment_<?php echo $goal['id']; ?>">Reason (optional):</label>
-                                                    <textarea id="rejection_comment_<?php echo $goal['id']; ?>" name="rejection_comment"></textarea>
-                                                </div>
-                                            </form>
-                                        <?php endif; ?>
-                            <?php elseif ($_SESSION['role'] === 'child' && $goal['status'] === 'active' && ($goal['goal_type'] ?? 'manual') === 'manual'): ?>
-                                        <form method="POST" action="goal.php">
-                                            <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
-                                            <button type="submit" name="request_completion" class="button">Request Completion</button>
-                                        </form>
-                                    <?php endif; ?>
-                                </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </div>
                 </details>
+                <?php
+                // Scan completed goals for celebration-ready state (needed for child modal even when trophy chips are shown)
+                if (!$isParentContext && !empty($completed_goals)) {
+                    foreach ($completed_goals as $_cg) {
+                        $_cgChildId = (int) ($_cg['child_user_id'] ?? ($_SESSION['user_id'] ?? 0));
+                        $_cgData = getGoalProgressSnapshot($_cg, $_cgChildId);
+                        if (!empty($_cgData['progress']['celebration_ready'])) {
+                            $celebrationGoals[] = $_cg;
+                            markGoalCelebrationShown($_cg['id'], $_cgChildId);
+                        }
+                    }
+                }
+                ?>
+                <?php if (!$isParentContext && !empty($completed_goals)): ?>
+                <div style="padding:4px 0 8px;">
+                  <div style="font-size:1rem;font-weight:700;color:#1a202c;padding:8px var(--mobile-pad) 6px;">Completed (<?php echo count($completed_goals); ?>)</div>
+                  <div style="display:flex;gap:14px;padding:4px var(--mobile-pad) 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;">
+                    <?php foreach ($completed_goals as $cg): ?>
+                      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
+                        <div style="width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#fbbf24);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(245,158,11,0.3);">
+                          <i class="fa-solid fa-trophy" style="color:#fff;font-size:1.2rem;"></i>
+                        </div>
+                        <span style="font-size:0.65rem;font-weight:600;color:#6b7280;white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis;text-align:center;"><?php echo htmlspecialchars(mb_substr($cg['title'] ?? '', 0, 10, 'UTF-8')); ?></span>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+                <?php else: ?>
                 <details class="task-section-toggle">
                     <summary>
                         <span class="task-section-title">Completed Goals <span class="task-count-badge"><?php echo count($displayCompletedGoals); ?></span></span>
@@ -1683,55 +1763,62 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                         ];
                         $completedPayloadJson = htmlspecialchars(json_encode($completedPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
                         ?>
-                        <div class="goal-card" id="goal-<?php echo (int) $goal['id']; ?>">
-                            <div class="goal-card-header">
-                                <h3 class="goal-card-title-text"><?php echo htmlspecialchars($goal['title']); ?></h3>
-                                <div class="goal-card-badges">
-                                    <?php if (!empty($goal['points_awarded'])): ?>
-                                        <span class="goal-points-badge"><?php echo (int) $goal['points_awarded']; ?></span>
-                                    <?php endif; ?>
-                                    <span class="goal-status-badge completed">Completed</span>
+                        <?php
+                            $gcCatColors2 = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                            $gcStripColor2 = $gcCatColors2[$goal['task_category'] ?? ''] ?? '#22c55e';
+                            $gcCircumference2 = round(2 * M_PI * 28, 2);
+                            $gcDashOffset2 = round($gcCircumference2 * (1 - $progressPercent / 100), 2);
+                        ?>
+                        <div class="goal-card<?php echo !$isParentContext ? ' gcard--child' : ''; ?>" id="goal-<?php echo (int) $goal['id']; ?>">
+                            <span class="gcard__strip" style="--gc-strip:<?php echo $gcStripColor2; ?>;"></span>
+                            <div class="gcard__body">
+                                <?php if ($isParentContext && !empty($goal['child_display_name'])): ?>
+                                    <span class="child-name-chip"><?php echo htmlspecialchars($goal['child_display_name']); ?></span>
+                                <?php endif; ?>
+                                <div class="gcard__title"><?php echo htmlspecialchars($goal['title']); ?></div>
+                                <div class="gcard__bar-wrap">
+                                    <div class="gcard__bar-fill" style="width:<?php echo (int)$progressPercent; ?>%;background:<?php echo $gcStripColor2; ?>;"></div>
                                 </div>
+                                <div class="gcard__progress-label"><?php echo htmlspecialchars($progressValue); ?> &middot; <?php echo (int)$progressPercent; ?>%</div>
+                                <?php if (!empty($goal['reward_title']) && $goal['reward_title'] !== 'None'): ?>
+                                    <span class="reward-chip"><i class="fa-solid fa-gift"></i> <?php echo htmlspecialchars($goal['reward_title']); ?></span>
+                                <?php endif; ?>
+                                <?php if (!empty($goal['points_awarded'])): ?>
+                                    <span class="reward-chip" style="background:#fffbeb;color:#f59e0b;"><i class="fa-solid fa-coins"></i> <?php echo (int)$goal['points_awarded']; ?> pts</span>
+                                <?php endif; ?>
                             </div>
-                            <?php if (!empty($goal['description'])): ?>
-                                <p class="goal-description"><span class="goal-info-label"><i class="fa-solid fa-message"></i></span><?php echo nl2br(htmlspecialchars($goal['description'])); ?></p>
-                            <?php endif; ?>
-                            <p class="goal-info-row"><span class="goal-info-label"><i class="fa-regular fa-calendar-days"></i></span><?php echo htmlspecialchars($goal['start_date_formatted']); ?> to <?php echo htmlspecialchars($goal['end_date_formatted']); ?></p>
-                            <p class="goal-info-row"><span class="goal-info-label"><i class="fa-solid fa-gift"></i></span><?php echo htmlspecialchars($goal['reward_title'] ?? 'None'); ?></p>
-                            <?php if (!empty($goal['creator_display_name'])): ?>
-                                <p class="goal-info-row"><span class="goal-info-label"><i class="fa-solid fa-user-pen"></i></span><?php echo htmlspecialchars($goal['creator_display_name']); ?></p>
+                            <?php if ($isParentContext): ?>
+                            <div class="gcard__right">
+                                <span class="gc-badge gc-badge--done">Done</span>
+                                <span class="gcard__pct-large" style="color:#22c55e;"><?php echo (int)$progressPercent; ?>%</span>
+                            </div>
+                            <?php else: ?>
+                            <div style="position:relative;width:70px;height:70px;flex-shrink:0;">
+                                <svg viewBox="0 0 70 70" width="70" height="70">
+                                    <circle fill="none" stroke="#e9ecf3" stroke-width="7" cx="35" cy="35" r="28"/>
+                                    <circle fill="none" stroke="<?php echo $gcStripColor2; ?>" stroke-width="7" stroke-linecap="round" cx="35" cy="35" r="28"
+                                        stroke-dasharray="<?php echo $gcCircumference2; ?>"
+                                        stroke-dashoffset="<?php echo $gcDashOffset2; ?>"
+                                        transform="rotate(-90 35 35)"/>
+                                </svg>
+                                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:0.85rem;font-weight:700;color:#1a202c;"><?php echo (int)$progressPercent; ?>%</div>
+                            </div>
                             <?php endif; ?>
                             <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                <div class="goal-info-row goal-assignee"><span class="goal-info-label"><i class="fa-solid fa-user"></i></span><?php echo htmlspecialchars($goal['child_display_name']); ?></div>
-                            <?php endif; ?>
-                            <div class="goal-progress">
-                                <div class="goal-progress-header">
-                                    <span><?php echo htmlspecialchars($goalTypeLabel); ?></span>
-                                    <span><?php echo htmlspecialchars($progressValue); ?></span>
-                                </div>
-                            <div class="goal-progress-bar has-steps complete"<?php echo $progressSteps > 0 ? ' style="--goal-progress-steps: ' . (int) $progressSteps . ';"' : ''; ?>>
-                                <span style="width: <?php echo (int) $progressPercent; ?>%;"></span>
-                            </div>
-                            </div>
-                            <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                <div class="goal-card-footer">
-                                    <div class="task-card-menu" data-goal-menu>
-                                        <button type="button" class="task-card-menu-toggle" aria-label="Open goal actions" data-goal-menu-toggle>
-                                            <i class="fa-solid fa-ellipsis-vertical"></i>
+                                <div class="task-card-menu" data-goal-menu style="align-self:flex-start;">
+                                    <button type="button" class="task-card-menu-toggle" aria-label="Open goal actions" data-goal-menu-toggle>
+                                        <i class="fa-solid fa-ellipsis-vertical"></i>
+                                    </button>
+                                    <div class="task-card-menu-list">
+                                        <button type="button" class="task-card-menu-item" data-goal-duplicate data-goal-payload="<?php echo $completedPayloadJson; ?>">
+                                            <i class="fa-solid fa-clone"></i> Duplicate Goal
                                         </button>
-                                        <div class="task-card-menu-list">
-                                            <button type="button" class="task-card-menu-item" data-goal-duplicate data-goal-payload="<?php echo $completedPayloadJson; ?>">
-                                                <i class="fa-solid fa-clone"></i>
-                                                Duplicate Goal
+                                        <form method="POST" action="goal.php" onsubmit="return confirm('Archive this goal?');">
+                                            <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                            <button type="submit" name="delete_goal" class="task-card-menu-item danger">
+                                                <i class="fa-solid fa-box-archive"></i> Archive Goal
                                             </button>
-                                            <form method="POST" action="goal.php" onsubmit="return confirm('Archive this goal?');">
-                                                <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
-                                                <button type="submit" name="delete_goal" class="task-card-menu-item danger">
-                                                    <i class="fa-solid fa-box-archive"></i>
-                                                    Archive Goal
-                                                </button>
-                                            </form>
-                                        </div>
+                                        </form>
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -1740,6 +1827,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                         <?php endif; ?>
                     </div>
                 </details>
+                <?php endif; // end child trophy chips / parent completed section ?>
                 <details class="task-section-toggle">
                     <summary>
                         <span class="task-section-title">Inactive Goals <span class="task-count-badge"><?php echo count($rejected_goals); ?></span></span>
@@ -1784,57 +1872,47 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                                     ];
                                     $inactivePayloadJson = htmlspecialchars(json_encode($inactivePayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
                                 ?>
-                                <div class="goal-card rejected-card" id="goal-<?php echo (int) $goal['id']; ?>">
-                                    <div class="goal-card-header">
-                                        <h3 class="goal-card-title-text"><?php echo htmlspecialchars($goal['title']); ?></h3>
-                                        <div class="goal-card-badges">
-                                            <?php if (!empty($goal['points_awarded'])): ?>
-                                                <span class="goal-points-badge"><?php echo (int) $goal['points_awarded']; ?></span>
-                                            <?php endif; ?>
-                                            <span class="goal-status-badge rejected"><?php echo htmlspecialchars($inactiveLabel); ?></span>
-                                        </div>
+                                <?php
+                                    $gcCatColors3 = ['chore'=>'#F97316','learning'=>'#6D28D9','routine'=>'#0D9488','pet'=>'#D97706','custom'=>'#A78BFA'];
+                                    $gcStripColor3 = $gcCatColors3[$goal['task_category'] ?? ''] ?? '#94a3b8';
+                                ?>
+                                <div class="goal-card<?php echo !$isParentContext ? ' gcard--child' : ''; ?>" id="goal-<?php echo (int) $goal['id']; ?>" style="opacity:0.7;">
+                                    <span class="gcard__strip" style="--gc-strip:<?php echo $gcStripColor3; ?>;"></span>
+                                    <div class="gcard__body">
+                                        <?php if ($isParentContext && !empty($goal['child_display_name'])): ?>
+                                            <span class="child-name-chip"><?php echo htmlspecialchars($goal['child_display_name']); ?></span>
+                                        <?php endif; ?>
+                                        <div class="gcard__title"><?php echo htmlspecialchars($goal['title']); ?></div>
+                                        <?php if (!empty($goal['reward_title']) && $goal['reward_title'] !== 'None'): ?>
+                                            <span class="reward-chip"><i class="fa-solid fa-gift"></i> <?php echo htmlspecialchars($goal['reward_title']); ?></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($goal['rejection_comment'])): ?>
+                                            <div class="gcard__progress-label"><?php echo htmlspecialchars($goal['rejection_comment']); ?></div>
+                                        <?php endif; ?>
                                     </div>
-                                    <?php if (!empty($goal['description'])): ?>
-                                        <p class="goal-description"><span class="goal-info-label"><i class="fa-solid fa-message"></i></span><?php echo nl2br(htmlspecialchars($goal['description'])); ?></p>
-                                    <?php endif; ?>
-                                    <p class="goal-info-row"><span class="goal-info-label"><i class="fa-regular fa-calendar-days"></i></span><?php echo htmlspecialchars($goal['start_date_formatted']); ?> to <?php echo htmlspecialchars($goal['end_date_formatted']); ?></p>
-                                    <p class="goal-info-row"><span class="goal-info-label"><i class="fa-solid fa-gift"></i></span><?php echo htmlspecialchars($goal['reward_title'] ?? 'None'); ?></p>
-                                    <?php if (!empty($goal['creator_display_name'])): ?>
-                                        <p class="goal-info-row"><span class="goal-info-label"><i class="fa-solid fa-user-pen"></i></span><?php echo htmlspecialchars($goal['creator_display_name']); ?></p>
-                                    <?php endif; ?>
+                                    <div class="gcard__right">
+                                        <span class="gc-badge gc-badge--denied"><?php echo htmlspecialchars($inactiveLabel); ?></span>
+                                    </div>
                                     <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                        <div class="goal-info-row goal-assignee"><span class="goal-info-label"><i class="fa-solid fa-user"></i></span><?php echo htmlspecialchars($goal['child_display_name']); ?></div>
-                                    <?php endif; ?>
-                                    <p class="goal-info-row"><span class="goal-info-label"><i class="fa-regular fa-calendar-days"></i></span><?php echo htmlspecialchars($inactiveDateLabel); ?>: <?php echo htmlspecialchars($goal['rejected_at_formatted']); ?></p>
-                                    <p class="goal-info-row"><span class="goal-info-label"><i class="fa-solid fa-comment"></i></span><?php echo htmlspecialchars($goal['rejection_comment'] ?? 'No comments available.'); ?></p>
-                                    <?php if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])): ?>
-                                        <div class="goal-card-footer">
-                                            <div class="task-card-menu" data-goal-menu>
-                                                <button type="button" class="task-card-menu-toggle" aria-label="Open goal actions" data-goal-menu-toggle>
-                                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                        <div class="task-card-menu" data-goal-menu style="align-self:flex-start;">
+                                            <button type="button" class="task-card-menu-toggle" aria-label="Open goal actions" data-goal-menu-toggle>
+                                                <i class="fa-solid fa-ellipsis-vertical"></i>
+                                            </button>
+                                            <div class="task-card-menu-list">
+                                                <button type="button" class="task-card-menu-item" data-goal-edit-open data-goal-reactivate="1" data-goal-payload="<?php echo $inactivePayloadJson; ?>">
+                                                    <i class="fa-solid fa-rotate-left"></i> Reactivate Goal
                                                 </button>
-                                                <div class="task-card-menu-list">
-                                                    <button type="button" class="task-card-menu-item" data-goal-edit-open data-goal-reactivate="1" data-goal-payload="<?php echo $inactivePayloadJson; ?>">
-                                                        <i class="fa-solid fa-rotate-left"></i>
-                                                        Reactivate Goal
+                                                <button type="button" class="task-card-menu-item" data-goal-duplicate data-goal-payload="<?php echo $inactivePayloadJson; ?>">
+                                                    <i class="fa-solid fa-clone"></i> Duplicate Goal
+                                                </button>
+                                                <form method="POST" action="goal.php" onsubmit="return confirm('Archive this goal?');">
+                                                    <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
+                                                    <button type="submit" name="delete_goal" class="task-card-menu-item danger">
+                                                        <i class="fa-solid fa-box-archive"></i> Archive Goal
                                                     </button>
-                                                    <button type="button" class="task-card-menu-item" data-goal-duplicate data-goal-payload="<?php echo $inactivePayloadJson; ?>">
-                                                        <i class="fa-solid fa-clone"></i>
-                                                        Duplicate Goal
-                                                    </button>
-                                                    <form method="POST" action="goal.php" onsubmit="return confirm('Archive this goal?');">
-                                                        <input type="hidden" name="goal_id" value="<?php echo $goal['id']; ?>">
-                                                        <button type="submit" name="delete_goal" class="task-card-menu-item danger">
-                                                            <i class="fa-solid fa-box-archive"></i>
-                                                            Archive Goal
-                                                        </button>
-                                                    </form>
-                                                </div>
+                                                </form>
                                             </div>
                                         </div>
-                                    <?php endif; ?>
-                                    <?php if ($_SESSION['role'] === 'child'): ?>
-                                        <p>Created on: <?php echo htmlspecialchars($goal['created_at_formatted']); ?></p>
                                     <?php endif; ?>
                                 </div>
                             <?php endforeach; ?>

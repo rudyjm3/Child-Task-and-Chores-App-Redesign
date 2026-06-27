@@ -2786,14 +2786,16 @@ function renderStreakCheckSvg($suffix) {
                   <div class="approval-card__title"><?php echo htmlspecialchars($pa['title']); ?></div>
                   <span class="status-badge status-badge--pending" style="display:inline-flex;margin-top:4px;"><?php echo htmlspecialchars($paCategoryLabel); ?></span>
                </div>
-               <div class="approval-card__actions" style="flex-direction:column;align-items:flex-end;gap:4px;">
+               <div class="approval-card__actions" style="flex-direction:column;align-items:flex-end;gap:6px;">
                   <span style="font-size:var(--text-base);font-weight:700;color:var(--color-warning);">+<?php echo (int)$pa['points']; ?></span>
-                  <form method="POST" style="display:inline;">
-                     <button type="submit" name="approve_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-approve">Approve</button>
-                  </form>
-                  <form method="POST" style="display:inline;">
-                     <button type="submit" name="reject_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-reject">Reject</button>
-                  </form>
+                  <div style="display:flex;gap:6px;">
+                     <form method="POST" style="display:inline;">
+                        <button type="submit" name="approve_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-approve">Approve</button>
+                     </form>
+                     <form method="POST" style="display:inline;">
+                        <button type="submit" name="reject_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-reject">Reject</button>
+                     </form>
+                  </div>
                </div>
             </div>
          <?php endforeach; ?>
