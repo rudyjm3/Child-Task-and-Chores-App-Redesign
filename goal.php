@@ -1651,6 +1651,19 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
                         <?php endif; ?>
                     </div>
                 </details>
+                <?php
+                // Scan completed goals for celebration-ready state (needed for child modal even when trophy chips are shown)
+                if (!$isParentContext && !empty($completed_goals)) {
+                    foreach ($completed_goals as $_cg) {
+                        $_cgChildId = (int) ($_cg['child_user_id'] ?? ($_SESSION['user_id'] ?? 0));
+                        $_cgData = getGoalProgressSnapshot($_cg, $_cgChildId);
+                        if (!empty($_cgData['progress']['celebration_ready'])) {
+                            $celebrationGoals[] = $_cg;
+                            markGoalCelebrationShown($_cg['id'], $_cgChildId);
+                        }
+                    }
+                }
+                ?>
                 <?php if (!$isParentContext && !empty($completed_goals)): ?>
                 <div style="padding:4px 0 8px;">
                   <div style="font-size:1rem;font-weight:700;color:#1a202c;padding:8px var(--mobile-pad) 6px;">Completed (<?php echo count($completed_goals); ?>)</div>

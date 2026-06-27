@@ -3706,6 +3706,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                     </div>
                 </details>
 
+                <?php if (!$isParentContext): ?>
                 <details class="task-section-toggle" <?php echo !empty($completed_tasks) ? 'open' : ''; ?>>
                     <summary>
                         <span class="task-section-title"><span class="task-section-icon is-pending"><i class="fa-solid fa-square-check"></i></span>Pending Approval <span class="task-count-badge"><?php echo count($completed_tasks); ?></span></span>
@@ -3875,6 +3876,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php endif; ?>
                     </div>
                 </details>
+                <?php endif; // !$isParentContext — original Pending Approval (child view only) ?>
 
                 <details class="task-section-toggle" data-approved-section>
                     <summary>
