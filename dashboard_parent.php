@@ -109,6 +109,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $parentNotificationActionSummary = 'Deleted ' . $count . ' notification' . ($count === 1 ? '' : 's') . '.';
             $parentNotificationActionTab = 'deleted';
         }
+    } elseif (isset($_POST['reject_task_notification'])) {
+        $task_id = (int)$_POST['reject_task_notification'];
+        if ($task_id) {
+            $taskStmt = $db->prepare("SELECT parent_user_id FROM tasks WHERE id = :id LIMIT 1");
+            $taskStmt->execute([':id' => $task_id]);
+            $taskRow = $taskStmt->fetch(PDO::FETCH_ASSOC);
+            if ($taskRow && (int)$taskRow['parent_user_id'] === (int)$main_parent_id) {
+                rejectTask($task_id, $main_parent_id, '', false, $main_parent_id);
+                $message = "Task rejected.";
+            }
+        }
+        header("Location: dashboard_parent.php");
+        exit;
     } elseif (isset($_POST['approve_task_notification'])) {
         $task_id = isset($_POST['approve_task_notification']) ? (int) $_POST['approve_task_notification'] : 0;
         $parent_notification_id = null;
@@ -2676,7 +2689,7 @@ function renderStreakCheckSvg($suffix) {
                  FROM tasks t
                  JOIN child_profiles cp ON cp.child_user_id = t.child_user_id
                  WHERE t.child_user_id IN ($dcp)
-                   AND t.status = 'pending_approval'
+                   AND t.status = 'completed'
                  ORDER BY t.completed_at DESC
                  LIMIT 10
              ");
@@ -2777,12 +2790,10 @@ function renderStreakCheckSvg($suffix) {
                   <span style="font-size:var(--text-base);font-weight:700;color:var(--color-warning);">+<?php echo (int)$pa['points']; ?></span>
                   <div style="display:flex;gap:6px;">
                      <form method="POST" style="display:inline;">
-                        <input type="hidden" name="task_id" value="<?php echo (int)$pa['id']; ?>">
-                        <button type="submit" name="approve_task" class="btn-approve">Approve</button>
+                        <button type="submit" name="approve_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-approve">Approve</button>
                      </form>
                      <form method="POST" style="display:inline;">
-                        <input type="hidden" name="task_id" value="<?php echo (int)$pa['id']; ?>">
-                        <button type="submit" name="reject_task" class="btn-reject">Reject</button>
+                        <button type="submit" name="reject_task_notification" value="<?php echo (int)$pa['id']; ?>" class="btn-reject">Reject</button>
                      </form>
                   </div>
                </div>
