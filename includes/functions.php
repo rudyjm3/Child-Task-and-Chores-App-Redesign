@@ -135,13 +135,20 @@ function calculateAge($birthday) {
 }
 
 // Update database schema for first/last name
-$db->exec("ALTER TABLE users 
-    ADD COLUMN IF NOT EXISTS first_name VARCHAR(50) DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS last_name VARCHAR(50) DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS role_badge_label VARCHAR(50) DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS use_role_badge_label TINYINT(1) DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS parent_title ENUM('mother','father') DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS deleted_at DATETIME DEFAULT NULL");
+// Guarded: on a brand-new database the users table does not exist yet at this
+// point (it is created in the bootstrap block below, which also adds these
+// columns), so a failure here is safe to ignore.
+try {
+    $db->exec("ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS first_name VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS last_name VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS role_badge_label VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS use_role_badge_label TINYINT(1) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS parent_title ENUM('mother','father') DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS deleted_at DATETIME DEFAULT NULL");
+} catch (PDOException $e) {
+    error_log("Deferred users table column updates (fresh install): " . $e->getMessage());
+}
 
 // Register a new user (revised for first/last name and gender)
 function registerUser($username, $password, $role, $first_name = null, $last_name = null, $gender = null) {
@@ -4443,6 +4450,10 @@ try {
    $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender ENUM('male', 'female') DEFAULT NULL");
    $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role_badge_label VARCHAR(50) DEFAULT NULL");
    $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS use_role_badge_label TINYINT(1) DEFAULT 0");
+   $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(50) DEFAULT NULL");
+   $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(50) DEFAULT NULL");
+   $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_title ENUM('mother','father') DEFAULT NULL");
+   $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at DATETIME DEFAULT NULL");
    error_log("Added/verified name and gender columns in users");
 
     // Create child_profiles table if not exists (removed preferences, added child_name)
@@ -4559,7 +4570,6 @@ try {
       parent_user_id INT NOT NULL,
       title VARCHAR(100) NOT NULL,
       description TEXT DEFAULT NULL,
-      description TEXT,
       point_cost INT NOT NULL,
       level_required INT NOT NULL DEFAULT 1,
       icon_class VARCHAR(64) DEFAULT NULL,
