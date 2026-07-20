@@ -100,17 +100,17 @@ if ($isParentContext) {
             $taskStmt = $db->prepare("
                 SELECT
                     rct.completion_log_id,
-                    rct.routine_task_id,
+                    rct.preset_task_id,
                     rct.sequence_order,
                     rct.completed_at,
                     rct.status_screen_seconds,
                     rct.scheduled_seconds,
                     rct.actual_seconds,
                     rct.stars_awarded,
-                    rt.title AS task_title,
-                    rt.time_limit AS task_time_limit
+                    COALESCE(rct.task_title, pt.title, 'Removed task') AS task_title,
+                    pt.time_limit AS task_time_limit
                 FROM routine_completion_tasks rct
-                LEFT JOIN routine_tasks rt ON rct.routine_task_id = rt.id
+                LEFT JOIN preset_tasks pt ON rct.preset_task_id = pt.id
                 WHERE rct.completion_log_id IN ($placeholders)
                 ORDER BY rct.completion_log_id DESC, rct.sequence_order ASC, rct.id ASC
             ");
@@ -189,7 +189,10 @@ function routineIsScheduledToday(array $routine, string $todayDate, string $toda
     return true;
 }
 
-function normalizeRoutineStructure(?string $rawStructure, int $family_root_id, array &$errors): array {
+// $allowedExistingIds: preset ids already part of the routine being edited.
+// Archived presets in that list stay valid (the routine keeps its snapshot);
+// newly added archived presets are rejected.
+function normalizeRoutineStructure(?string $rawStructure, int $family_root_id, array &$errors, array $allowedExistingIds = []): array {
     if (!$rawStructure) {
         $errors[] = 'Add at least one routine task.';
         return [[], [], ['tasks' => []]];
@@ -209,7 +212,7 @@ function normalizeRoutineStructure(?string $rawStructure, int $family_root_id, a
         }
     }
     $taskIds = array_values(array_unique($taskIds));
-    $taskMap = getRoutineTasksByIds($family_root_id, $taskIds);
+    $taskMap = getPresetTasksByIds($family_root_id, $taskIds);
     if (count($taskMap) !== count($taskIds)) {
         $errors[] = 'One or more selected routine tasks are no longer available.';
     }
@@ -220,6 +223,11 @@ function normalizeRoutineStructure(?string $rawStructure, int $family_root_id, a
     foreach ($taskEntries as $entry) {
         $taskId = isset($entry['id']) ? (int) $entry['id'] : 0;
         if ($taskId <= 0 || !isset($taskMap[$taskId])) {
+            continue;
+        }
+        $isArchived = array_key_exists('is_active', $taskMap[$taskId]) && (int) $taskMap[$taskId]['is_active'] === 0;
+        if ($isArchived && !in_array($taskId, $allowedExistingIds, true)) {
+            $errors[] = 'The preset task "' . ($taskMap[$taskId]['title'] ?? '') . '" is archived and cannot be added to a routine.';
             continue;
         }
         if (isset($seen[$taskId])) {
@@ -309,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $logged = 0;
         foreach ($payload as $entry) {
             $routineId = isset($entry['routine_id']) ? (int) $entry['routine_id'] : 0;
-            $taskId = isset($entry['routine_task_id']) ? (int) $entry['routine_task_id'] : 0;
+            $taskId = isset($entry['preset_task_id']) ? (int) $entry['preset_task_id'] : 0;
             $scheduled = isset($entry['scheduled_seconds']) ? (int) $entry['scheduled_seconds'] : 0;
             $actual = isset($entry['actual_seconds']) ? (int) $entry['actual_seconds'] : 0;
             $overtime = isset($entry['overtime_seconds']) ? (int) $entry['overtime_seconds'] : 0;
@@ -329,7 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         echo json_encode(['status' => 'ok', 'logged' => $logged]);
         exit;
-    } elseif ($action === 'reset_routine_tasks') {
+    } elseif ($action === 'reset_routine_steps') {
         header('Content-Type: application/json');
         if (!isset($_SESSION['user_id'])) {
             http_response_code(403);
@@ -352,7 +360,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             echo json_encode(['status' => 'error', 'message' => 'Routine not assigned to this child.']);
             exit;
         }
-        $reset = resetRoutineTaskStatuses($routineId);
+        $reset = resetRoutineStepStatuses($routineId);
         if ($reset && isset($_SESSION['routine_awards'][$routineId])) {
             unset($_SESSION['routine_awards'][$routineId]);
         }
@@ -371,7 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         $routineId = filter_input(INPUT_POST, 'routine_id', FILTER_VALIDATE_INT);
-        $taskId = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $taskId = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
         $status = isset($_POST['status']) ? (string) $_POST['status'] : '';
         if (!$routineId || !$taskId || !in_array($status, ['pending', 'completed'], true)) {
             http_response_code(400);
@@ -404,7 +412,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             echo json_encode(['status' => 'not_today', 'message' => $message]);
             exit;
         }
-        $updated = setRoutineTaskStatus($routineId, $taskId, $status);
+        $updated = setRoutineStepStatus($routineId, $taskId, $status);
         echo json_encode(['status' => $updated ? 'ok' : 'error']);
         exit;
     } elseif ($action === 'complete_routine_flow') {
@@ -551,7 +559,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'awarded_points' => $awardedPoints,
                 'stars_awarded' => $starsAwarded
             ];
-            setRoutineTaskStatus($routineId, $taskId, 'completed');
+            setRoutineStepStatus($routineId, $taskId, 'completed');
         }
 
         $bonusPossible = max(0, (int) ($routine['bonus_points'] ?? 0));
@@ -586,6 +594,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if (!$completedAt) {
             $completedAt = date('Y-m-d H:i:s');
         }
+        $awardedById = [];
+        foreach ($awards as $awardEntry) {
+            $awardedById[(int) $awardEntry['id']] = (int) ($awardEntry['awarded_points'] ?? 0);
+        }
         $completionTasks = [];
         foreach ($taskLookup as $taskId => $taskRow) {
             $metric = $metricsById[$taskId] ?? [];
@@ -602,13 +614,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $actualSeconds = (int) ($metric['actual_seconds'] ?? 0);
             }
             $completionTasks[] = [
-                'routine_task_id' => $taskId,
+                'preset_task_id' => $taskId,
                 'sequence_order' => (int) ($taskRow['sequence_order'] ?? 0),
                 'completed_at' => $taskCompletedAt,
                 'scheduled_seconds' => $scheduledSeconds,
                 'actual_seconds' => $actualSeconds,
                 'status_screen_seconds' => max(0, (int) ($metric['status_screen_seconds'] ?? 0)),
-                'stars_awarded' => calculateRoutineTaskStars((int) ($scheduledSeconds ?? 0), (int) ($actualSeconds ?? 0))
+                'stars_awarded' => calculateRoutineTaskStars((int) ($scheduledSeconds ?? 0), (int) ($actualSeconds ?? 0)),
+                'task_title' => $taskRow['title'] ?? null,
+                'points_awarded' => $awardedById[$taskId] ?? 0
             ];
         }
         if ($parentIdForLog > 0) {
@@ -723,7 +737,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $createdCount = 0;
                 foreach ($childIds as $cid) {
                     $routineId = createRoutine($family_root_id, $cid, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day, $recurrence_days, $routine_date, $_SESSION['user_id']);
-                    replaceRoutineTasks($routineId, $normalizedTasks);
+                    replaceRoutineSteps($routineId, $normalizedTasks);
                     $createdCount++;
                 }
                 $db->commit();
@@ -790,7 +804,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Provide a title for the routine.';
         }
         $durationMinutes = validateRoutineTimeframe($start_time, $end_time, $errors);
-        [$normalizedTasks, $taskMap, $sanitizedStructure] = normalizeRoutineStructure($structureRaw, $family_root_id, $errors);
+        // Steps already in this routine stay valid even if their preset was
+        // archived since (the routine keeps its snapshot values).
+        $existingStepIds = [];
+        if ($routine_id) {
+            try {
+                global $db;
+                $existingStmt = $db->prepare("SELECT preset_task_id FROM routine_preset_tasks WHERE routine_id = :id");
+                $existingStmt->execute([':id' => $routine_id]);
+                $existingStepIds = array_map('intval', $existingStmt->fetchAll(PDO::FETCH_COLUMN));
+            } catch (Exception $e) {
+                $existingStepIds = [];
+            }
+        }
+        [$normalizedTasks, $taskMap, $sanitizedStructure] = normalizeRoutineStructure($structureRaw, $family_root_id, $errors, $existingStepIds);
 
         $totalTaskMinutes = 0;
         foreach ($normalizedTasks as $taskRow) {
@@ -814,13 +841,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $primaryChildId = $currentChildId;
                 }
                 updateRoutine($routine_id, $primaryChildId, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day, $recurrence_days, $routine_date, $family_root_id);
-                replaceRoutineTasks($routine_id, $normalizedTasks);
+                replaceRoutineSteps($routine_id, $normalizedTasks);
                 $extraChildren = array_values(array_filter($childIds, static function ($id) use ($primaryChildId) {
                     return (int) $id !== (int) $primaryChildId;
                 }));
                 foreach ($extraChildren as $cid) {
                     $newRoutineId = createRoutine($family_root_id, $cid, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day, $recurrence_days, $routine_date, $_SESSION['user_id']);
-                    replaceRoutineTasks($newRoutineId, $normalizedTasks);
+                    replaceRoutineSteps($newRoutineId, $normalizedTasks);
                 }
                 $db->commit();
                 if (!empty($extraChildren)) {
@@ -890,31 +917,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         $min_toggle = ($minimum_seconds !== null && $minimum_seconds > 0) ? 1 : 0;
+        $default_tod_input = filter_input(INPUT_POST, 'rt_default_time_of_day', FILTER_SANITIZE_STRING);
+        $default_time_of_day = in_array($default_tod_input, ['anytime', 'morning', 'afternoon', 'evening'], true) ? $default_tod_input : 'anytime';
 
         if ($title === '' || $time_limit === null) {
-            $messages[] = ['type' => 'error', 'text' => 'Routine task needs a title and a positive time limit.'];
+            $messages[] = ['type' => 'error', 'text' => 'Preset task needs a title and a positive time limit.'];
         } else {
-            if (createRoutineTask($family_root_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds, $min_toggle, null, null, $_SESSION['user_id'])) {
-                $messages[] = ['type' => 'success', 'text' => 'Routine task added to the library.'];
-                $routine_tasks = getRoutineTasks($family_root_id);
+            if (createPresetTask($family_root_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds, $min_toggle, null, null, $_SESSION['user_id'], $default_time_of_day)) {
+                $messages[] = ['type' => 'success', 'text' => 'Preset task added.'];
+                $preset_tasks = getPresetTasks($family_root_id, true);
             } else {
-                $messages[] = ['type' => 'error', 'text' => 'Failed to add routine task.'];
+                $messages[] = ['type' => 'error', 'text' => 'Failed to add preset task.'];
             }
         }
     } elseif ($isParentContext && isset($_POST['update_routine_task'])) {
-        $routine_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
         $title = trim((string) filter_input(INPUT_POST, 'edit_rt_title', FILTER_SANITIZE_STRING));
         $description = trim((string) filter_input(INPUT_POST, 'edit_rt_description', FILTER_SANITIZE_STRING));
         $time_limit = filter_input(INPUT_POST, 'edit_rt_time_limit', FILTER_VALIDATE_INT);
         $point_value = filter_input(INPUT_POST, 'edit_rt_point_value', FILTER_VALIDATE_INT);
         $category = filter_input(INPUT_POST, 'edit_rt_category', FILTER_SANITIZE_STRING);
 
-        if (!isset($routine_tasks) || !is_array($routine_tasks)) {
-            $routine_tasks = getRoutineTasks($family_root_id);
+        if (!isset($preset_tasks) || !is_array($preset_tasks)) {
+            $preset_tasks = getPresetTasks($family_root_id, true);
         }
         $existingTask = null;
-        foreach ($routine_tasks as $candidateTask) {
-            if ((int) ($candidateTask['id'] ?? 0) === (int) $routine_task_id) {
+        foreach ($preset_tasks as $candidateTask) {
+            if ((int) ($candidateTask['id'] ?? 0) === (int) $preset_task_id) {
                 $existingTask = $candidateTask;
                 break;
             }
@@ -970,26 +999,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $updates['minimum_enabled'] = 0;
         }
 
-        if (!$routine_task_id || empty($updates)) {
-            $messages[] = ['type' => 'error', 'text' => 'Unable to update routine task.'];
+        $default_tod_input = filter_input(INPUT_POST, 'edit_rt_default_time_of_day', FILTER_SANITIZE_STRING);
+        if (in_array($default_tod_input, ['anytime', 'morning', 'afternoon', 'evening'], true)) {
+            $updates['default_time_of_day'] = $default_tod_input;
+        }
+
+        if (!$preset_task_id || empty($updates)) {
+            $messages[] = ['type' => 'error', 'text' => 'Unable to update preset task.'];
         } else {
-            if (updateRoutineTask($routine_task_id, $updates)) {
-                $messages[] = ['type' => 'success', 'text' => 'Routine task updated.'];
-                $routine_tasks = getRoutineTasks($family_root_id);
+            if (updatePresetTask($preset_task_id, $updates)) {
+                $messages[] = ['type' => 'success', 'text' => 'Preset task updated. Existing routines and assigned tasks keep their current values.'];
+                $preset_tasks = getPresetTasks($family_root_id, true);
                 if ($minimumToggleError) {
                     $messages[] = ['type' => 'info', 'text' => 'Minimum time remained disabled because no positive duration was provided.'];
                 }
             } else {
-                $messages[] = ['type' => 'error', 'text' => 'Failed to update routine task.'];
+                $messages[] = ['type' => 'error', 'text' => 'Failed to update preset task.'];
             }
         }
     } elseif ($isParentContext && isset($_POST['delete_routine_task'])) {
-        $routine_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
-        if ($routine_task_id && deleteRoutineTask($routine_task_id, $family_root_id)) {
-            $messages[] = ['type' => 'success', 'text' => 'Routine task removed from the library.'];
-            $routine_tasks = getRoutineTasks($family_root_id);
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
+        $deleteResult = $preset_task_id ? deletePresetTask($preset_task_id, $family_root_id) : false;
+        if ($deleteResult === 'deleted') {
+            $messages[] = ['type' => 'success', 'text' => 'Preset task deleted.'];
+            $preset_tasks = getPresetTasks($family_root_id, true);
+        } elseif ($deleteResult === 'archived') {
+            $messages[] = ['type' => 'success', 'text' => 'Preset task archived because routines, tasks, or history still use it. Restore it anytime from the Archived filter.'];
+            $preset_tasks = getPresetTasks($family_root_id, true);
         } else {
-            $messages[] = ['type' => 'error', 'text' => 'Unable to delete routine task.'];
+            $messages[] = ['type' => 'error', 'text' => 'Unable to delete preset task.'];
+        }
+    } elseif ($isParentContext && isset($_POST['archive_preset_task'])) {
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
+        if ($preset_task_id && archivePresetTask($preset_task_id, $family_root_id)) {
+            $messages[] = ['type' => 'success', 'text' => 'Preset task archived. Existing routines and history keep their values.'];
+            $preset_tasks = getPresetTasks($family_root_id, true);
+        } else {
+            $messages[] = ['type' => 'error', 'text' => 'Unable to archive preset task.'];
+        }
+    } elseif ($isParentContext && isset($_POST['restore_preset_task'])) {
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
+        if ($preset_task_id && restorePresetTask($preset_task_id, $family_root_id)) {
+            $messages[] = ['type' => 'success', 'text' => 'Preset task restored.'];
+            $preset_tasks = getPresetTasks($family_root_id, true);
+        } else {
+            $messages[] = ['type' => 'error', 'text' => 'Unable to restore preset task.'];
         }
     } elseif ($isParentContext && isset($_POST['save_routine_preferences'])) {
         $timerWarnings = isset($_POST['timer_warnings_enabled']) ? 1 : 0;
@@ -1097,7 +1151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         $completionTimestampMap[$taskId] = $completedAtValue;
                     }
-                    setRoutineTaskStatus($routine_id, $taskId, $status, $completedAtValue);
+                    setRoutineStepStatus($routine_id, $taskId, $status, $completedAtValue);
                     if ($isSelected && empty($completedTodayMap[$taskId])) {
                         $awardedPoints += max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0));
                     }
@@ -1139,13 +1193,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         foreach ($tasks as $task) {
                             $taskId = (int) ($task['id'] ?? 0);
                             $completionTasks[] = [
-                                'routine_task_id' => $taskId,
+                                'preset_task_id' => $taskId,
                                 'sequence_order' => (int) ($task['sequence_order'] ?? 0),
                                 'completed_at' => $completionTimestampMap[$taskId] ?? null,
                                 'scheduled_seconds' => null,
                                 'actual_seconds' => null,
                                 'status_screen_seconds' => 0,
-                                'stars_awarded' => 3
+                                'stars_awarded' => 3,
+                                'task_title' => $task['title'] ?? null,
+                                'points_awarded' => (in_array($taskId, $selected, true) && empty($completedTodayMap[$taskId])) ? max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0)) : 0
                             ];
                         }
                         logRoutineCompletionSession($routine_id, $childId, $parentIdForLog, 'parent', $parentStartedAt, $parentCompletedAt, $completionTasks);
@@ -1173,7 +1229,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$routine_tasks = $isParentContext ? getRoutineTasks($family_root_id) : [];
+// Include archived presets: the management UI shows them under the Archived
+// filter, and existing routine steps may still reference them.
+$preset_tasks = $isParentContext ? getPresetTasks($family_root_id, true) : [];
 $routines = getRoutines($_SESSION['user_id']);
 $routineCompletionMap = [];
 if (getEffectiveRole($_SESSION['user_id']) === 'child') {
@@ -1302,7 +1360,7 @@ $pagePreferences = [
 
 $jsonOptions = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP;
 $pageState = [
-    'tasks' => $routine_tasks,
+    'tasks' => $preset_tasks,
     'createInitial' => $createBuilderInitial,
     'editInitial' => $editBuilderInitial,
     'routines' => $routines,
@@ -1327,6 +1385,8 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Management</title>
     <link rel="stylesheet" href="css/main.css?v=3.27.0">
+    <script src="js/time-of-day.js?v=3.27.0"></script>
+    <script src="js/preset-picker.js?v=3.27.0"></script>
     <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
     <link rel="stylesheet" href="css/child.css?v=3.27.0">
     <?php else: ?>
@@ -1408,8 +1468,10 @@ margin-bottom: 20px;}
         .button.danger { background: #e53935; }
         .button.linkish { background: transparent; color: #1565c0; border: none; padding: 0; }
         .routine-builder { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-top: 16px; background: #fafafa; }
-        .builder-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
-        .builder-controls select { min-width: 240px; }
+        .builder-controls { display: flex; flex-direction: column; gap: 8px; }
+        .builder-controls-label { font-weight: 600; color: #37474f; font-size: 0.9rem; }
+        .builder-controls-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+        .builder-controls-buttons .button { display: inline-flex; align-items: center; gap: 8px; }
         .selected-task-list { list-style: none; margin: 18px 0 0; padding: 0; }
         .selected-task-item { background: #fff; border: 1px solid #dcdcdc; border-radius: 8px; padding: 12px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin-bottom: 10px; }
         .selected-task-item.error { border-color: #f44336; }
@@ -1701,8 +1763,14 @@ margin-bottom: 20px;}
         .button.primary { background: linear-gradient(135deg, #619fd0, #42a5f5); color: #fff; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: transform 140ms ease, box-shadow 140ms ease; }
         .button.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(33,150,243,0.35); }
         .library-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-        .library-filters { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; color: #37474f; }
+        .library-filters { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; font-weight: 600; color: #37474f; }
         .library-filters select { border: 1px solid #c5cae9; border-radius: 10px; padding: 8px 12px; font-size: 0.9rem; }
+        .library-filters input[type="search"] { border: 1px solid #c5cae9; border-radius: 10px; padding: 8px 12px; font-size: 0.9rem; min-width: 170px; }
+        .library-task-badge { background: var(--color-warning-light, #FEF3C7); color: var(--color-warning-dark, #92400E); border-radius: var(--radius-full, 999px); padding: 2px 10px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+        .library-task-card.is-archived { opacity: 0.65; }
+        .library-edit-note { display: flex; gap: 8px; align-items: flex-start; background: var(--color-primary-light, #EDE9FE); color: var(--color-text-dark, #1E1B4B); border-radius: var(--radius-sm, 8px); padding: 10px 12px; font-size: 0.85rem; margin: 0 0 12px; }
+        .library-edit-note i { margin-top: 2px; color: var(--color-primary, #6D28D9); }
+        .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
         .library-collapse { border: 1px solid rgba(13, 71, 161, 0.1); border-radius: 12px; padding: 0 0 6px; background: rgba(236, 245, 255, 0.55); }
         .library-toggle { cursor: pointer; font-weight: 700; padding: 12px 16px; position: relative; display: flex; align-items: center; gap: 10px; color: #1565c0; }
         .library-toggle::after { content: '\25BC'; font-size: 0.95rem; transition: transform 200ms ease; }
@@ -2005,7 +2073,7 @@ margin-bottom: 20px;}
 
         <?php if ($isParentContext): ?>
             <div class="routine-action-bar">
-                <button type="button" class="routine-library-button" data-routine-library-open aria-label="Open routine task library">
+                <button type="button" class="routine-library-button" data-routine-library-open aria-label="Open preset tasks">
                     <i class="fa-solid fa-rectangle-list"></i>
                 </button>
                 <button type="button" class="routine-pref-button" data-routine-pref-open aria-label="Routine timer preferences">
@@ -2183,16 +2251,15 @@ margin-bottom: 20px;}
                                 </div>
                                 <div class="routine-builder" data-builder-id="create" data-start-input="#start_time" data-end-input="#end_time">
                                     <div class="builder-controls">
-                                        <div class="form-group">
-                                            <label for="create-task-picker">Add Routine Task</label>
-                                            <select id="create-task-picker" data-role="task-picker">
-                                                <option value="">Select task...</option>
-                                                <?php foreach ($routine_tasks as $task): ?>
-                                                    <option value="<?php echo (int) $task['id']; ?>"><?php echo htmlspecialchars($task['title']); ?> (<?php echo (int) $task['time_limit']; ?> min)</option>
-                                                <?php endforeach; ?>
-                                            </select>
+                                        <span class="builder-controls-label">Add tasks to this routine</span>
+                                        <div class="builder-controls-buttons">
+                                            <button type="button" class="button secondary" data-role="pick-preset">
+                                                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pick a Preset Task
+                                            </button>
+                                            <button type="button" class="button secondary" data-role="create-custom-task">
+                                                <i class="fa-solid fa-plus" aria-hidden="true"></i> Create Custom Task
+                                            </button>
                                         </div>
-                                        <button type="button" class="button secondary" data-role="add-task">Add Task</button>
                                     </div>
                                     <ul class="selected-task-list" data-role="selected-list"></ul>
                                     <div class="summary-row">
@@ -2214,35 +2281,43 @@ margin-bottom: 20px;}
             <div class="routine-modal" data-routine-library-modal>
                 <div class="routine-modal-card" role="dialog" aria-modal="true" aria-labelledby="routine-library-title">
                     <header>
-                        <h2 id="routine-library-title">Routine Task Library</h2>
+                        <h2 id="routine-library-title">Preset Tasks</h2>
                         <div class="routine-modal-header-actions">
-                            <button type="button" class="button primary" data-action="open-task-modal">Add Routine Task</button>
-                            <button type="button" class="routine-modal-close" data-routine-library-close aria-label="Close routine task library">&times;</button>
+                            <button type="button" class="button primary" data-action="open-task-modal">Add Preset Task</button>
+                            <button type="button" class="routine-modal-close" data-routine-library-close aria-label="Close preset tasks">&times;</button>
                         </div>
                     </header>
                     <div class="routine-modal-body">
                         <div class="library-grid">
                             <div class="library-card">
                                 <div class="library-header">
-                                    <h3>Task Library</h3>
+                                    <h3>Preset Tasks</h3>
                                     <div class="library-filters">
-                                        <label for="library-filter">Filter by category:</label>
+                                        <label class="visually-hidden" for="library-search">Search preset tasks</label>
+                                        <input type="search" id="library-search" data-role="library-search" placeholder="Search by name&hellip;">
+                                        <label for="library-filter">Category:</label>
                                         <select id="library-filter" data-role="library-filter">
-                                            <option value="all">All Tasks</option>
+                                            <option value="all">All</option>
                                             <option value="hygiene">Hygiene</option>
                                             <option value="homework">Homework</option>
                                             <option value="household">Household</option>
                                         </select>
+                                        <label for="library-status-filter">Status:</label>
+                                        <select id="library-status-filter" data-role="library-status-filter">
+                                            <option value="active">Active</option>
+                                            <option value="archived">Archived</option>
+                                            <option value="all">All</option>
+                                        </select>
                                     </div>
                                 </div>
-                                <?php if (empty($routine_tasks)): ?>
-                                    <p class="no-data">No routine tasks available yet. Add a task to start building routines.</p>
+                                <?php if (empty($preset_tasks)): ?>
+                                    <p class="no-data">No preset tasks yet. Add a preset task to reuse it in routines and individual assignments.</p>
                                 <?php else: ?>
                                     <details class="library-collapse">
-                                        <summary class="library-toggle">View Saved Library Tasks</summary>
+                                        <summary class="library-toggle">View Saved Preset Tasks</summary>
                                         <div class="library-table-wrap">
                                             <div class="library-card-list">
-                                                <?php foreach ($routine_tasks as $task): ?>
+                                                <?php foreach ($preset_tasks as $task): ?>
                                                     <?php
                                                         $taskMinSeconds = isset($task['minimum_seconds']) ? (int) $task['minimum_seconds'] : 0;
                                                         $taskMinEnabled = !empty($task['minimum_enabled']);
@@ -2259,9 +2334,20 @@ margin-bottom: 20px;}
                                                             : '';
                                                         $taskDescription = trim((string) ($task['description'] ?? ''));
                                                     ?>
-                                            <article class="library-task-card" data-role="library-item" data-category="<?php echo htmlspecialchars($task['category']); ?>">
+                                            <?php
+                                                $taskIsActive = !isset($task['is_active']) || (int) $task['is_active'] === 1;
+                                                $taskDefaultTod = in_array(($task['default_time_of_day'] ?? 'anytime'), ['anytime', 'morning', 'afternoon', 'evening'], true) ? $task['default_time_of_day'] : 'anytime';
+                                            ?>
+                                            <article class="library-task-card<?php echo $taskIsActive ? '' : ' is-archived'; ?>"
+                                                     data-role="library-item"
+                                                     data-category="<?php echo htmlspecialchars($task['category']); ?>"
+                                                     data-status="<?php echo $taskIsActive ? 'active' : 'archived'; ?>"
+                                                     data-title="<?php echo htmlspecialchars(mb_strtolower($task['title'])); ?>">
                                                 <header>
                                                     <h4><?php echo htmlspecialchars($task['title']); ?></h4>
+                                                    <?php if (!$taskIsActive): ?>
+                                                        <span class="library-task-badge">Archived</span>
+                                                    <?php endif; ?>
                                                     <span class="library-task-points"><i class="fa-solid fa-coins"></i> <?php echo (int) $task['point_value']; ?></span>
                                                 </header>
                                                 <p class="library-task-description">
@@ -2271,6 +2357,7 @@ margin-bottom: 20px;}
                                                     <span><?php echo (int) $task['time_limit']; ?> min</span>
                                                     <span>Min: <?php echo htmlspecialchars($taskMinDisplay); ?></span>
                                                     <span><?php echo htmlspecialchars(ucfirst($task['category'])); ?></span>
+                                                    <span><?php echo htmlspecialchars(ucfirst($taskDefaultTod)); ?></span>
                                                 </div>
                                                 <?php if ((int) $task['parent_user_id'] === $family_root_id): ?>
                                                     <div class="library-task-actions">
@@ -2285,7 +2372,8 @@ margin-bottom: 20px;}
                                                                 data-task-min-enabled="<?php echo $taskMinEnabled ? '1' : '0'; ?>"
                                                                 data-task-point-value="<?php echo (int) $task['point_value']; ?>"
                                                                 data-task-category="<?php echo htmlspecialchars($task['category']); ?>"
-                                                                aria-label="Edit routine task">
+                                                                data-task-default-tod="<?php echo htmlspecialchars($taskDefaultTod); ?>"
+                                                                aria-label="Edit preset task">
                                                             <i class="fa-solid fa-pen"></i>
                                                         </button>
                                                         <button type="button"
@@ -2298,12 +2386,28 @@ margin-bottom: 20px;}
                                                                 data-task-min-enabled="<?php echo $taskMinEnabled ? '1' : '0'; ?>"
                                                                 data-task-point-value="<?php echo (int) $task['point_value']; ?>"
                                                                 data-task-category="<?php echo htmlspecialchars($task['category']); ?>"
-                                                                aria-label="Duplicate routine task">
+                                                                data-task-default-tod="<?php echo htmlspecialchars($taskDefaultTod); ?>"
+                                                                aria-label="Duplicate preset task">
                                                             <i class="fa-solid fa-clone"></i>
                                                         </button>
-                                                        <form method="POST" onsubmit="return confirm('Delete this task?');">
-                                                            <input type="hidden" name="routine_task_id" value="<?php echo (int) $task['id']; ?>">
-                                                            <button type="submit" name="delete_routine_task" class="icon-button danger" aria-label="Delete routine task">
+                                                        <?php if ($taskIsActive): ?>
+                                                            <form method="POST">
+                                                                <input type="hidden" name="preset_task_id" value="<?php echo (int) $task['id']; ?>">
+                                                                <button type="submit" name="archive_preset_task" class="icon-button" aria-label="Archive preset task" title="Archive">
+                                                                    <i class="fa-solid fa-box-archive"></i>
+                                                                </button>
+                                                            </form>
+                                                        <?php else: ?>
+                                                            <form method="POST">
+                                                                <input type="hidden" name="preset_task_id" value="<?php echo (int) $task['id']; ?>">
+                                                                <button type="submit" name="restore_preset_task" class="icon-button" aria-label="Restore preset task" title="Restore">
+                                                                    <i class="fa-solid fa-rotate-left"></i>
+                                                                </button>
+                                                            </form>
+                                                        <?php endif; ?>
+                                                        <form method="POST" onsubmit="return confirm('Delete this preset task? If routines, tasks, or history still use it, it will be archived instead.');">
+                                                            <input type="hidden" name="preset_task_id" value="<?php echo (int) $task['id']; ?>">
+                                                            <button type="submit" name="delete_routine_task" class="icon-button danger" aria-label="Delete preset task">
                                                                 <i class="fa-solid fa-trash"></i>
                                                             </button>
                                                         </form>
@@ -2319,8 +2423,8 @@ margin-bottom: 20px;}
                         </div>
                         <div class="task-modal-overlay" data-role="task-modal" aria-hidden="true">
                             <div class="task-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
-                                <button type="button" class="task-modal-close" data-action="close-task-modal" aria-label="Close add routine task dialog"><i class="fa-solid fa-xmark"></i></button>
-                                <h3 id="task-modal-title">Create Routine Task</h3>
+                                <button type="button" class="task-modal-close" data-action="close-task-modal" aria-label="Close add preset task dialog"><i class="fa-solid fa-xmark"></i></button>
+                                <h3 id="task-modal-title">Create Preset Task</h3>
                                 <form method="POST" class="library-form" autocomplete="off">
                                     <div class="input-group">
                                         <label for="rt_title">Task Title</label>
@@ -2353,18 +2457,29 @@ margin-bottom: 20px;}
                                             <option value="household">Household</option>
                                         </select>
                                     </div>
+                                    <div class="input-group">
+                                        <label for="rt_default_time_of_day">Default Time of Day</label>
+                                        <select id="rt_default_time_of_day" name="rt_default_time_of_day">
+                                            <option value="anytime">Anytime</option>
+                                            <option value="morning">Morning</option>
+                                            <option value="afternoon">Afternoon</option>
+                                            <option value="evening">Evening</option>
+                                        </select>
+                                        <small>Suggested group when assigning this preset. Parents can change it per assignment.</small>
+                                    </div>
                                     <div class="form-actions">
-                                        <button type="submit" name="create_routine_task" class="button primary">Add Routine Task</button>
+                                        <button type="submit" name="create_routine_task" class="button primary">Add Preset Task</button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                         <div class="task-modal-overlay" data-role="task-edit-modal" aria-hidden="true">
                             <div class="task-modal" role="dialog" aria-modal="true" aria-labelledby="task-edit-title">
-                                <button type="button" class="task-modal-close" data-action="close-task-edit-modal" aria-label="Close edit routine task dialog"><i class="fa-solid fa-xmark"></i></button>
-                                <h3 id="task-edit-title">Edit Routine Task</h3>
+                                <button type="button" class="task-modal-close" data-action="close-task-edit-modal" aria-label="Close edit preset task dialog"><i class="fa-solid fa-xmark"></i></button>
+                                <h3 id="task-edit-title">Edit Preset Task</h3>
                                 <form method="POST" class="library-form" autocomplete="off">
-                                    <input type="hidden" name="routine_task_id" value="">
+                                    <input type="hidden" name="preset_task_id" value="">
+                                    <p class="library-edit-note"><i class="fa-solid fa-circle-info"></i> Changes apply to future use only. Existing routines, assigned tasks, and history keep their current values.</p>
                                     <div class="input-group">
                                         <label for="edit_rt_title">Title</label>
                                         <input type="text" id="edit_rt_title" name="edit_rt_title" required>
@@ -2400,6 +2515,15 @@ margin-bottom: 20px;}
                                             <option value="hygiene">Hygiene</option>
                                             <option value="homework">Homework</option>
                                             <option value="household">Household</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="edit_rt_default_time_of_day">Default Time of Day</label>
+                                        <select id="edit_rt_default_time_of_day" name="edit_rt_default_time_of_day">
+                                            <option value="anytime">Anytime</option>
+                                            <option value="morning">Morning</option>
+                                            <option value="afternoon">Afternoon</option>
+                                            <option value="evening">Evening</option>
                                         </select>
                                     </div>
                                     <div class="form-actions">
@@ -2844,16 +2968,15 @@ margin-bottom: 20px;}
                                                 </div>
                                                 <div class="routine-builder" data-builder-id="edit-<?php echo (int) $routine['id']; ?>" data-start-input="input[name='start_time']" data-end-input="input[name='end_time']">
                                                     <div class="builder-controls">
-                                                        <div class="form-group">
-                                                            <label>Add Routine Task</label>
-                                                            <select data-role="task-picker">
-                                                                <option value="">Select task...</option>
-                                                                <?php foreach ($routine_tasks as $task): ?>
-                                                                    <option value="<?php echo (int) $task['id']; ?>"><?php echo htmlspecialchars($task['title']); ?> (<?php echo (int) $task['time_limit']; ?> min)</option>
-                                                                <?php endforeach; ?>
-                                                            </select>
+                                                        <span class="builder-controls-label">Add tasks to this routine</span>
+                                                        <div class="builder-controls-buttons">
+                                                            <button type="button" class="button secondary" data-role="pick-preset">
+                                                                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pick a Preset Task
+                                                            </button>
+                                                            <button type="button" class="button secondary" data-role="create-custom-task">
+                                                                <i class="fa-solid fa-plus" aria-hidden="true"></i> Create Custom Task
+                                                            </button>
                                                         </div>
-                                                        <button type="button" class="button secondary" data-role="add-task">Add Task</button>
                                                     </div>
                                                     <ul class="selected-task-list" data-role="selected-list"></ul>
                                                     <div class="summary-row">
@@ -3428,6 +3551,9 @@ margin-bottom: 20px;}
                     this.listEl = container.querySelector('[data-role="selected-list"]');
                     this.taskPicker = container.querySelector('[data-role="task-picker"]');
                     this.addButton = container.querySelector('[data-role="add-task"]');
+                    this.pickPresetButton = container.querySelector('[data-role="pick-preset"]');
+                    this.createCustomButton = container.querySelector('[data-role="create-custom-task"]');
+                    this.presetPicker = null;
                     this.structureInput = container.querySelector('[data-role="structure-input"]');
                     this.totalMinutesEl = container.querySelector('[data-role="total-minutes"]');
                     this.durationEl = container.querySelector('[data-role="duration-minutes"]');
@@ -3461,6 +3587,40 @@ margin-bottom: 20px;}
                             if (this.selectedTasks.some(task => task.id === numeric)) return;
                             this.selectedTasks.push({ id: numeric });
                             this.render();
+                        });
+                    }
+
+                    if (this.pickPresetButton && window.PresetPicker) {
+                        this.pickPresetButton.addEventListener('click', () => {
+                            if (!this.presetPicker) {
+                                this.presetPicker = window.PresetPicker.create({
+                                    onSelect: (preset) => this.addPreset(preset),
+                                    getDisabledIds: () => this.selectedTasks.map(task => task.id),
+                                    disabledNote: 'In this routine'
+                                });
+                            }
+                            this.presetPicker.open();
+                        });
+                    }
+
+                    if (this.createCustomButton) {
+                        // Opens the Preset Tasks screen with the create form
+                        // (custom tasks in routines are saved as reusable presets).
+                        this.createCustomButton.addEventListener('click', () => {
+                            const libraryModalEl = document.querySelector('[data-routine-library-modal]');
+                            const presetCreateOverlay = document.querySelector('[data-role="task-modal"]');
+                            if (libraryModalEl) {
+                                libraryModalEl.classList.add('open');
+                                document.body.classList.add('modal-open');
+                            }
+                            if (presetCreateOverlay) {
+                                presetCreateOverlay.classList.add('active');
+                                presetCreateOverlay.setAttribute('aria-hidden', 'false');
+                                const firstField = presetCreateOverlay.querySelector('input, textarea, select');
+                                if (firstField) {
+                                    firstField.focus();
+                                }
+                            }
                         });
                     }
 
@@ -3545,6 +3705,19 @@ margin-bottom: 20px;}
 
                     this.syncStructureInput();
                     this.updateSummary();
+                }
+
+                // Adds a preset chosen from the shared picker. The picker
+                // disables ids already in this routine, but guard again here.
+                addPreset(preset) {
+                    const numeric = parseInt(preset && preset.id, 10);
+                    if (!Number.isFinite(numeric) || numeric <= 0) return;
+                    if (this.selectedTasks.some(task => task.id === numeric)) return;
+                    if (!taskLookup.has(String(numeric))) {
+                        taskLookup.set(String(numeric), preset);
+                    }
+                    this.selectedTasks.push({ id: numeric });
+                    this.render();
                 }
 
                 syncStructureInput() {
@@ -4863,7 +5036,7 @@ margin-bottom: 20px;}
                     if (scheduled > 0 && actualSeconds > scheduled) {
                         this.overtimeBuffer.push({
                             routine_id: parseInt(this.routine.id, 10) || 0,
-                            routine_task_id: parseInt(this.currentTask.id, 10) || 0,
+                            preset_task_id: parseInt(this.currentTask.id, 10) || 0,
                             child_user_id: parseInt(this.routine.child_user_id, 10) || 0,
                             scheduled_seconds: scheduled,
                             actual_seconds: actualSeconds,
@@ -5163,7 +5336,7 @@ margin-bottom: 20px;}
 
                 resetRoutineStatuses() {
                     const payload = new FormData();
-                    payload.append('action', 'reset_routine_tasks');
+                    payload.append('action', 'reset_routine_steps');
                     payload.append('routine_id', this.routine.id);
                     fetch('routine.php', { method: 'POST', body: payload })
                         .then(response => response.json())
@@ -5183,7 +5356,7 @@ margin-bottom: 20px;}
                     const payload = new FormData();
                     payload.append('action', 'set_routine_task_status');
                     payload.append('routine_id', this.routine.id);
-                    payload.append('routine_task_id', taskId);
+                    payload.append('preset_task_id', taskId);
                     payload.append('status', status);
                     fetch('routine.php', { method: 'POST', body: payload }).catch(() => {});
                 }
@@ -5231,17 +5404,35 @@ margin-bottom: 20px;}
             }
 
             const libraryFilter = document.querySelector('[data-role="library-filter"]');
+            const libraryStatusFilter = document.querySelector('[data-role="library-status-filter"]');
+            const librarySearch = document.querySelector('[data-role="library-search"]');
             const libraryItems = libraryFilter ? Array.from(document.querySelectorAll('[data-role="library-item"]')) : [];
             if (libraryFilter && libraryItems.length) {
                 const updateLibraryVisibility = () => {
-                    const value = libraryFilter.value || 'all';
+                    const categoryValue = libraryFilter.value || 'all';
+                    const statusValue = libraryStatusFilter ? (libraryStatusFilter.value || 'active') : 'all';
+                    const searchValue = librarySearch ? librarySearch.value.trim().toLowerCase() : '';
                     libraryItems.forEach(card => {
                         const category = card.getAttribute('data-category') || '';
-                        const visible = value === 'all' || category === value;
+                        const status = card.getAttribute('data-status') || 'active';
+                        const title = card.getAttribute('data-title') || '';
+                        let visible = categoryValue === 'all' || category === categoryValue;
+                        if (visible && statusValue !== 'all') {
+                            visible = status === statusValue;
+                        }
+                        if (visible && searchValue !== '') {
+                            visible = title.indexOf(searchValue) !== -1;
+                        }
                         card.style.display = visible ? '' : 'none';
                     });
                 };
                 libraryFilter.addEventListener('change', updateLibraryVisibility);
+                if (libraryStatusFilter) {
+                    libraryStatusFilter.addEventListener('change', updateLibraryVisibility);
+                }
+                if (librarySearch) {
+                    librarySearch.addEventListener('input', updateLibraryVisibility);
+                }
                 updateLibraryVisibility();
             }
 
@@ -5309,7 +5500,7 @@ margin-bottom: 20px;}
             };
             const populateTaskEditModal = (button) => {
                 if (!taskEditModal || !button) return;
-                const idField = taskEditModal.querySelector('input[name="routine_task_id"]');
+                const idField = taskEditModal.querySelector('input[name="preset_task_id"]');
                 const titleField = taskEditModal.querySelector('input[name="edit_rt_title"]');
                 const descriptionField = taskEditModal.querySelector('textarea[name="edit_rt_description"]');
                 const timeLimitField = taskEditModal.querySelector('input[name="edit_rt_time_limit"]');
@@ -5317,6 +5508,7 @@ margin-bottom: 20px;}
                 const minEnabledField = taskEditModal.querySelector('input[name="edit_rt_min_enabled"]');
                 const pointValueField = taskEditModal.querySelector('input[name="edit_rt_point_value"]');
                 const categoryField = taskEditModal.querySelector('select[name="edit_rt_category"]');
+                const defaultTodField = taskEditModal.querySelector('select[name="edit_rt_default_time_of_day"]');
                 const taskId = button.getAttribute('data-task-id') || '';
                 const taskTitle = decodeHtmlEntities(button.getAttribute('data-task-title') || '');
                 const taskDescription = decodeHtmlEntities(button.getAttribute('data-task-description') || '');
@@ -5325,6 +5517,7 @@ margin-bottom: 20px;}
                 const taskMinEnabled = button.getAttribute('data-task-min-enabled') === '1';
                 const taskPointValue = button.getAttribute('data-task-point-value') || '0';
                 const taskCategory = button.getAttribute('data-task-category') || '';
+                const taskDefaultTod = button.getAttribute('data-task-default-tod') || 'anytime';
                 if (idField) idField.value = taskId;
                 if (titleField) titleField.value = taskTitle;
                 if (descriptionField) descriptionField.value = taskDescription;
@@ -5333,6 +5526,7 @@ margin-bottom: 20px;}
                 if (minEnabledField) minEnabledField.checked = taskMinEnabled;
                 if (pointValueField) pointValueField.value = taskPointValue;
                 if (categoryField) categoryField.value = taskCategory;
+                if (defaultTodField) defaultTodField.value = taskDefaultTod;
             };
             const populateTaskCreateModal = (button) => {
                 if (!taskModal || !button) return;
@@ -5353,12 +5547,15 @@ margin-bottom: 20px;}
                 const taskMinEnabled = button.getAttribute('data-task-min-enabled') === '1';
                 const taskPointValue = button.getAttribute('data-task-point-value') || '0';
                 const taskCategory = button.getAttribute('data-task-category') || '';
+                const taskDefaultTod = button.getAttribute('data-task-default-tod') || 'anytime';
+                const defaultTodField = taskModal.querySelector('select[name="rt_default_time_of_day"]');
                 if (titleField) titleField.value = taskTitle;
                 if (descriptionField) descriptionField.value = taskDescription;
                 if (timeLimitField) timeLimitField.value = taskTimeLimit;
                 if (minMinutesField) minMinutesField.value = taskMinEnabled ? taskMinMinutes : '';
                 if (pointValueField) pointValueField.value = taskPointValue;
                 if (categoryField) categoryField.value = taskCategory;
+                if (defaultTodField) defaultTodField.value = taskDefaultTod;
             };
             if (taskEditButtons.length && taskEditModal) {
                 taskEditButtons.forEach((button) => {

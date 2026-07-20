@@ -879,6 +879,7 @@ function renderStreakCheckSvg($suffix) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parent Dashboard</title>
     <link rel="stylesheet" href="css/main.css?v=3.27.0">
+    <script src="js/time-of-day.js?v=3.27.0"></script>
     <link rel="stylesheet" href="css/parent.css?v=3.27.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
@@ -1894,12 +1895,7 @@ function renderStreakCheckSvg($suffix) {
                     listWrap.innerHTML = '';
                     const todayKey = formatDateKey(new Date());
                     let totalItems = 0;
-                    const sections = [
-                        { key: 'anytime', label: 'Due Today' },
-                        { key: 'morning', label: 'Morning' },
-                        { key: 'afternoon', label: 'Afternoon' },
-                        { key: 'evening', label: 'Evening' }
-                    ];
+                    const sections = window.TimeOfDay.ORDER.map((key) => ({ key, label: window.TimeOfDay.LABELS[key] }));
                     weekDates.forEach(({ date, dateKey }) => {
                         const items = (schedule[dateKey] || []).slice();
                         items.sort((a, b) => {
@@ -3133,19 +3129,11 @@ function renderStreakCheckSvg($suffix) {
                       <div class="child-schedule-today">
                          <div class="child-schedule-date">Today: <?php echo htmlspecialchars(date('D, M j', strtotime($todayDate))); ?></div>
                          <?php
-                            $sections = [
-                               'anytime' => 'Due Today',
-                               'morning' => 'Morning',
-                               'afternoon' => 'Afternoon',
-                               'evening' => 'Evening'
-                            ];
-                            $sectionedToday = ['anytime' => [], 'morning' => [], 'afternoon' => [], 'evening' => []];
-                            foreach ($todayItems as $item) {
-                               $key = $item['time_of_day'] ?? '';
-                               if (isset($sectionedToday[$key])) {
-                                  $sectionedToday[$key][] = $item;
-                               }
+                            $sections = [];
+                            foreach (timeOfDayOrder() as $todKey) {
+                               $sections[$todKey] = timeOfDayLabel($todKey);
                             }
+                            $sectionedToday = groupByTimeOfDay($todayItems);
                             $hasSchedule = false;
                             foreach ($sectionedToday as $sectionItems) {
                                if (!empty($sectionItems)) {

@@ -62,15 +62,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $photo_proof_required = !empty($_POST['photo_proof_required']) ? 1 : 0;
 
+        // Preset provenance: re-validate server-side that the chosen preset
+        // still exists, belongs to this family, and is active. If it was
+        // deactivated while the form was open, save the task as custom and say so.
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
+        $presetWarning = '';
+        if ($preset_task_id) {
+            $presetRow = getPresetTasksByIds($family_root_id, [$preset_task_id])[$preset_task_id] ?? null;
+            if (!$presetRow) {
+                $preset_task_id = null;
+                $presetWarning = ' The selected preset task no longer exists, so it was saved as a custom task.';
+            } elseif (isset($presetRow['is_active']) && (int) $presetRow['is_active'] === 0) {
+                $preset_task_id = null;
+                $presetWarning = ' The selected preset task was archived, so it was saved as a custom task.';
+            }
+        }
+
         if (!empty($child_ids) && canCreateContent($_SESSION['user_id'])) {
             $allOk = true;
             foreach ($child_ids as $child_user_id) {
-                $ok = createTask($family_root_id, $child_user_id, $title, $description, $due_date, $end_date, $points, $recurrence, $recurrence_days, $category, $timing_mode, $timer_minutes, $time_of_day, $photo_proof_required, $_SESSION['user_id']);
+                $ok = createTask($family_root_id, $child_user_id, $title, $description, $due_date, $end_date, $points, $recurrence, $recurrence_days, $category, $timing_mode, $timer_minutes, $time_of_day, $photo_proof_required, $_SESSION['user_id'], $preset_task_id ?: null);
                 if (!$ok) {
                     $allOk = false;
                 }
             }
-            $message = $allOk ? "Task created successfully!" : "Some tasks failed to create.";
+            $message = ($allOk ? "Task created successfully!" : "Some tasks failed to create.") . $presetWarning;
         } else {
             $message = "Select at least one child.";
         }
@@ -564,6 +580,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Task Management</title>
       <link rel="stylesheet" href="css/main.css?v=3.27.0">
+      <script src="js/time-of-day.js?v=3.27.0"></script>
     <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
     <link rel="stylesheet" href="css/child.css?v=3.27.0">
     <?php else: ?>
@@ -875,6 +892,13 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
         .task-create-modal.open { display: flex; }
         .task-create-card { background: #fff; border-radius: 14px; max-width: 860px; width: min(860px, 100%); max-height: 90vh; overflow: hidden; box-shadow: 0 12px 32px rgba(0,0,0,0.25); display: grid; grid-template-rows: auto 1fr; }
         .task-create-card header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e0e0e0; }
+        .task-create-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--color-primary-light, #EDE9FE); border-radius: var(--radius-md, 12px); padding: 12px 14px; margin-bottom: 14px; }
+        .task-create-mode__hint { flex: 1 1 220px; font-size: 0.85rem; color: var(--color-text-sec, #6B7280); }
+        .task-create-mode__actions .button { display: inline-flex; align-items: center; gap: 8px; }
+        .task-create-preset-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--color-white, #fff); border: 1px solid var(--color-primary-mid, #A78BFA); color: var(--color-text-dark, #1E1B4B); border-radius: var(--radius-full, 999px); padding: 6px 12px; font-size: 0.85rem; }
+        .task-create-preset-chip i { color: var(--color-primary, #6D28D9); }
+        .task-create-preset-chip button { border: none; background: transparent; color: var(--color-text-sec, #6B7280); font-size: 1rem; cursor: pointer; padding: 0 2px; }
+        .task-create-preset-chip button:hover { color: var(--color-danger, #DC2626); }
         .task-create-body { padding: 12px 16px 18px; overflow-y: auto; }
         .task-photo-thumb { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; border: 1px solid #d5def0; box-shadow: 0 2px 6px rgba(0,0,0,0.12); cursor: pointer; }
         .task-photo-proof { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
@@ -2153,6 +2177,67 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         closeCreate();
                     }
                 });
+
+                // --- "Pick a Preset Task" flow ---
+                const presetIdField = createForm.querySelector('[data-preset-task-id]');
+                const presetChip = createForm.querySelector('[data-preset-chip]');
+                const presetChipTitle = createForm.querySelector('[data-preset-chip-title]');
+                const presetChipClear = createForm.querySelector('[data-preset-chip-clear]');
+                const presetPickerButton = createForm.querySelector('[data-open-preset-picker]');
+                const clearPresetSelection = () => {
+                    if (presetIdField) presetIdField.value = '';
+                    if (presetChip) presetChip.hidden = true;
+                };
+                const applyPresetToCreateForm = (preset) => {
+                    if (presetIdField) presetIdField.value = preset.id;
+                    if (presetChip && presetChipTitle) {
+                        presetChipTitle.textContent = preset.title;
+                        presetChip.hidden = false;
+                    }
+                    // Prefill assignment fields from the preset; everything stays
+                    // editable (assignment-level overrides never change the preset).
+                    createForm.querySelector('[name="title"]').value = preset.title || '';
+                    createForm.querySelector('[name="description"]').value = preset.description || '';
+                    // Zero is a valid preset point value - only skip when absent.
+                    if (preset.point_value !== undefined && preset.point_value !== null && preset.point_value !== '') {
+                        createForm.querySelector('[name="points"]').value = preset.point_value;
+                    }
+                    createForm.querySelector('[name="category"]').value = preset.category || 'household';
+                    const todSelect = createForm.querySelector('[name="time_of_day"]');
+                    if (todSelect) {
+                        todSelect.value = window.TimeOfDay ? window.TimeOfDay.normalize(preset.default_time_of_day) : (preset.default_time_of_day || 'anytime');
+                        updateDueTimeVisibility(createForm.querySelector('[data-due-time-wrapper]'), todSelect);
+                    }
+                    const timingSelect = createForm.querySelector('[name="timing_mode"]');
+                    const timerInput = createForm.querySelector('[name="timer_minutes"]');
+                    if (timingSelect && timerInput) {
+                        if (preset.time_limit) {
+                            timingSelect.value = 'timer';
+                            timerInput.value = preset.time_limit;
+                        } else {
+                            timingSelect.value = 'no_limit';
+                            timerInput.value = '';
+                        }
+                        updateTimerField(createForm.querySelector('[data-create-timer-minutes]'), timingSelect);
+                    }
+                };
+                let presetPickerInstance = null;
+                if (presetPickerButton && window.PresetPicker) {
+                    presetPickerButton.addEventListener('click', () => {
+                        if (!presetPickerInstance) {
+                            presetPickerInstance = window.PresetPicker.create({
+                                onSelect: applyPresetToCreateForm
+                            });
+                        }
+                        presetPickerInstance.open();
+                    });
+                }
+                if (presetChipClear) {
+                    presetChipClear.addEventListener('click', clearPresetSelection);
+                }
+                createForm.addEventListener('reset', () => {
+                    setTimeout(clearPresetSelection, 0);
+                });
             }
 
             const setView = (view) => {
@@ -2273,12 +2358,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                 listWrap.innerHTML = '';
                 const todayKey = formatDateKey(new Date());
                 let totalItems = 0;
-                const sections = [
-                    { key: 'anytime', label: 'Due Today' },
-                    { key: 'morning', label: 'Morning' },
-                    { key: 'afternoon', label: 'Afternoon' },
-                    { key: 'evening', label: 'Evening' }
-                ];
+                const sections = window.TimeOfDay.ORDER.map((key) => ({ key, label: window.TimeOfDay.LABELS[key] }));
 
                 weekDates.forEach(({ date, dateKey }) => {
                     const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
@@ -2405,12 +2485,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         empty.textContent = 'No tasks';
                         list.appendChild(empty);
                     } else {
-                        const sections = [
-                            { key: 'anytime', label: 'Due Today' },
-                            { key: 'morning', label: 'Morning' },
-                            { key: 'afternoon', label: 'Afternoon' },
-                            { key: 'evening', label: 'Evening' }
-                        ];
+                        const sections = window.TimeOfDay.ORDER.map((key) => ({ key, label: window.TimeOfDay.LABELS[key] }));
 
                         sections.forEach((section) => {
                             const sectionItems = items.filter(({ task }) => (task.time_of_day || 'anytime') === section.key);
@@ -3395,7 +3470,11 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php if (empty($completed_tasks)): ?>
                             <p>No tasks waiting approval.</p>
                         <?php else: ?>
-                            <?php foreach ($completed_tasks as $task): ?>
+                            <?php $lastTodGroup = null; ?>
+                            <?php foreach (sortTasksForTimeOfDayDisplay($completed_tasks) as $task): ?>
+                            <?php if (($task['_tod_group'] ?? null) !== $lastTodGroup): $lastTodGroup = $task['_tod_group']; ?>
+                                <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($lastTodGroup); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($lastTodGroup); ?></div>
+                            <?php endif; ?>
                             <?php
                                 $timeOfDay = $task['time_of_day'] ?? 'anytime';
                                 $isOnce = empty($task['recurrence']);
@@ -3493,7 +3572,11 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php if (empty($pending_tasks)): ?>
                             <p>No active tasks.</p>
                         <?php else: ?>
-                            <?php foreach ($pending_tasks as $task): ?>
+                            <?php $lastTodGroup = null; ?>
+                            <?php foreach (sortTasksForTimeOfDayDisplay($pending_tasks) as $task): ?>
+                        <?php if (($task['_tod_group'] ?? null) !== $lastTodGroup): $lastTodGroup = $task['_tod_group']; ?>
+                            <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($lastTodGroup); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($lastTodGroup); ?></div>
+                        <?php endif; ?>
                         <?php
                         $today_key = date('Y-m-d');
                         $instance_today = $taskInstancesByTask[(int) $task['id']][$today_key] ?? null;
@@ -3715,7 +3798,11 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php if (empty($completed_tasks)): ?>
                             <p>No tasks waiting approval.</p>
                         <?php else: ?>
-                            <?php foreach ($completed_tasks as $task): ?>
+                            <?php $lastTodGroup = null; ?>
+                            <?php foreach (sortTasksForTimeOfDayDisplay($completed_tasks) as $task): ?>
+                            <?php if (($task['_tod_group'] ?? null) !== $lastTodGroup): $lastTodGroup = $task['_tod_group']; ?>
+                                <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($lastTodGroup); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($lastTodGroup); ?></div>
+                            <?php endif; ?>
                             <?php
                                 $timeOfDay = $task['time_of_day'] ?? 'anytime';
                                 $isOnce = empty($task['recurrence']);
@@ -4056,26 +4143,27 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                     foreach ($pending_tasks as $t) { $t['_status'] = 'todo'; $childAllTasks[] = $t; }
                     foreach ($completed_tasks as $t) { $t['_status'] = 'waiting'; $childAllTasks[] = $t; }
                     foreach ($approved_tasks as $t) { $t['_status'] = 'done'; $childAllTasks[] = $t; }
-                    $todOrder = ['morning'=>0,'afternoon'=>1,'evening'=>2,'anytime'=>3];
-                    usort($childAllTasks, function($a,$b) use ($todOrder) {
-                        return ($todOrder[$a['time_of_day']??'anytime']??3) <=> ($todOrder[$b['time_of_day']??'anytime']??3);
-                    });
-                    $childByTod = [];
-                    foreach ($childAllTasks as $t) { $childByTod[$t['time_of_day']??'anytime'][] = $t; }
-                    $todLabels = ['morning'=>'Morning','afternoon'=>'Afternoon','evening'=>'Evening','anytime'=>'Anytime'];
+                    // Shared grouping helpers: Morning -> Afternoon -> Evening
+                    // -> Anytime, sorted within each group; empty groups hidden.
+                    $childByTod = groupByTimeOfDay($childAllTasks);
                 ?>
                 <?php if (empty($childAllTasks)): ?>
                     <p style="padding:16px var(--mobile-pad);">No tasks for today.</p>
                 <?php else: ?>
-                <?php foreach ($childByTod as $tod => $todTasks): ?>
-                    <div class="tc-tod-label"><?php echo $todLabels[$tod] ?? ucfirst($tod); ?></div>
+                <?php foreach (timeOfDayOrder() as $tod): ?>
+                    <?php
+                        $todTasks = $childByTod[$tod];
+                        if (empty($todTasks)) { continue; }
+                        usort($todTasks, 'compareWithinTimeOfDayGroup');
+                    ?>
+                    <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($tod); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($tod); ?></div>
                     <?php foreach ($todTasks as $task): ?>
                         <?php
                             $catKey = $task['category'] ?? '';
                             $catColor = $catColorsFl[$catKey] ?? '#6D28D9';
                             $circleBg = $catCircleBg[$catKey] ?? '#f3edff';
                             $status = $task['_status'];
-                            $todDisplay = $todLabels[$task['time_of_day']??'anytime'] ?? 'Anytime';
+                            $todDisplay = timeOfDayLabel($task['time_of_day'] ?? 'anytime');
                             $catDisplay = ucfirst($catKey ?: 'Task');
                             $pts = (int)($task['points'] ?? 0);
                             $taskId = (int)$task['id'];
@@ -4195,7 +4283,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                 </div>
                                 <div class="form-group">
                                     <label>Points</label>
-                                    <input type="number" name="points" min="1" value="" required>
+                                    <input type="number" name="points" min="0" value="" required>
                                 </div>
                                 <div class="form-group">
                                     <label>Repeat</label>
@@ -4412,6 +4500,20 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                 <div class="task-create-body">
                     <form method="POST" action="task.php" enctype="multipart/form-data" data-create-task-form>
                         <?php $autoSelectChildId = count($children) === 1 ? (int) $children[0]['child_user_id'] : null; ?>
+                        <input type="hidden" name="preset_task_id" value="" data-preset-task-id>
+                        <div class="task-create-mode" data-task-create-mode>
+                            <span class="task-create-mode__hint">Start from a reusable preset, or fill in the details below for a custom task.</span>
+                            <div class="task-create-mode__actions">
+                                <button type="button" class="button secondary" data-open-preset-picker>
+                                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pick a Preset Task
+                                </button>
+                            </div>
+                            <div class="task-create-preset-chip" data-preset-chip hidden>
+                                <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+                                <span>From preset: <strong data-preset-chip-title></strong></span>
+                                <button type="button" data-preset-chip-clear aria-label="Clear preset selection and switch to custom task">&times;</button>
+                            </div>
+                        </div>
                         <div class="form-grid">
                             <div class="form-group">
                                 <label>Child</label>
@@ -4435,7 +4537,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                             </div>
                             <div class="form-group">
                                 <label for="points">Points</label>
-                                <input type="number" id="points" name="points" min="1" required>
+                                <input type="number" id="points" name="points" min="0" required>
                             </div>
                             <div class="form-group repeat-group">
                                 <label for="recurrence">Repeat</label>
@@ -4550,6 +4652,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
       <p>Child Task and Chore App - Ver 3.27.0</p>
     </footer>
   <script src="js/number-stepper.js?v=3.26.0" defer></script>
+  <script src="js/preset-picker.js?v=3.27.0"></script>
 <?php if (!empty($isParentNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_parent.php'; ?>
 <?php endif; ?>
