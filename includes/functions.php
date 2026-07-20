@@ -125,6 +125,113 @@ function getUserRoleLabel($user_id) {
     return ucfirst(str_replace('_', ' ', $role));
 }
 
+// ---------------------------------------------------------------------------
+// Time-of-day helpers (single source of truth; JS mirror in js/time-of-day.js)
+// Boundaries: morning < 12:00, afternoon 12:00-16:59, evening >= 17:00,
+// anytime = no specific time.
+// ---------------------------------------------------------------------------
+
+function timeOfDayOrder(): array {
+    return ['morning', 'afternoon', 'evening', 'anytime'];
+}
+
+function timeOfDayLabel(string $timeOfDay): string {
+    $labels = [
+        'morning' => 'Morning',
+        'afternoon' => 'Afternoon',
+        'evening' => 'Evening',
+        'anytime' => 'Anytime',
+    ];
+    return $labels[$timeOfDay] ?? 'Anytime';
+}
+
+// Font Awesome icon class for a time-of-day group heading (kept in sync with
+// js/time-of-day.js ICONS).
+function timeOfDayIcon(string $timeOfDay): string {
+    $icons = [
+        'morning' => 'fa-sun',
+        'afternoon' => 'fa-cloud-sun',
+        'evening' => 'fa-moon',
+        'anytime' => 'fa-clock',
+    ];
+    return $icons[$timeOfDay] ?? 'fa-clock';
+}
+
+// Flattens items into display order (Morning, Afternoon, Evening, Anytime;
+// sorted within each group) and tags each with '_tod_group' so templates can
+// emit a heading when the group changes.
+function sortTasksForTimeOfDayDisplay(array $items, ?callable $getter = null): array {
+    $grouped = groupByTimeOfDay($items, $getter);
+    $flat = [];
+    foreach (timeOfDayOrder() as $todKey) {
+        usort($grouped[$todKey], 'compareWithinTimeOfDayGroup');
+        foreach ($grouped[$todKey] as $item) {
+            $item['_tod_group'] = $todKey;
+            $flat[] = $item;
+        }
+    }
+    return $flat;
+}
+
+// Derives a time-of-day group from a clock time ('HH:MM', 'HH:MM:SS', or a
+// datetime string). Null/empty input means no specific time -> 'anytime'.
+function timeOfDayFromTime(?string $time): string {
+    if ($time === null || trim((string) $time) === '') {
+        return 'anytime';
+    }
+    $stamp = strtotime($time);
+    if ($stamp === false) {
+        return 'anytime';
+    }
+    $hour = (int) date('G', $stamp);
+    if ($hour < 12) {
+        return 'morning';
+    }
+    if ($hour < 17) {
+        return 'afternoon';
+    }
+    return 'evening';
+}
+
+// Groups items into ['morning' => [...], 'afternoon' => [...], 'evening' =>
+// [...], 'anytime' => [...]] in display order. $getter maps an item to its
+// time_of_day value; defaults to the item's 'time_of_day' key.
+function groupByTimeOfDay(array $items, ?callable $getter = null): array {
+    $groups = array_fill_keys(timeOfDayOrder(), []);
+    foreach ($items as $item) {
+        $tod = $getter ? $getter($item) : ($item['time_of_day'] ?? 'anytime');
+        if (!in_array($tod, timeOfDayOrder(), true)) {
+            $tod = 'anytime';
+        }
+        $groups[$tod][] = $item;
+    }
+    return $groups;
+}
+
+// Sort comparator within a time-of-day group: scheduled/due time first, then
+// routine step order, then parent-defined display order, then title.
+function compareWithinTimeOfDayGroup(array $a, array $b): int {
+    $timeA = $a['due_date'] ?? $a['start_time'] ?? null;
+    $timeB = $b['due_date'] ?? $b['start_time'] ?? null;
+    $stampA = $timeA ? strtotime((string) $timeA) : false;
+    $stampB = $timeB ? strtotime((string) $timeB) : false;
+    if ($stampA !== false && $stampB !== false && $stampA !== $stampB) {
+        return $stampA <=> $stampB;
+    }
+    if (($stampA !== false) !== ($stampB !== false)) {
+        return $stampA !== false ? -1 : 1;
+    }
+    $seqA = (int) ($a['sequence_order'] ?? 0);
+    $seqB = (int) ($b['sequence_order'] ?? 0);
+    if ($seqA !== $seqB && ($seqA > 0 || $seqB > 0)) {
+        if ($seqA > 0 && $seqB > 0) {
+            return $seqA <=> $seqB;
+        }
+        return $seqA > 0 ? -1 : 1;
+    }
+    return strcasecmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? ''));
+}
+
 // Calculate age from birthday
 function calculateAge($birthday) {
     if (!$birthday) return null;

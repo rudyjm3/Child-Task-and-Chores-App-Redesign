@@ -564,6 +564,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Task Management</title>
       <link rel="stylesheet" href="css/main.css?v=3.27.0">
+      <script src="js/time-of-day.js?v=3.27.0"></script>
     <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
     <link rel="stylesheet" href="css/child.css?v=3.27.0">
     <?php else: ?>
@@ -2273,12 +2274,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                 listWrap.innerHTML = '';
                 const todayKey = formatDateKey(new Date());
                 let totalItems = 0;
-                const sections = [
-                    { key: 'anytime', label: 'Due Today' },
-                    { key: 'morning', label: 'Morning' },
-                    { key: 'afternoon', label: 'Afternoon' },
-                    { key: 'evening', label: 'Evening' }
-                ];
+                const sections = window.TimeOfDay.ORDER.map((key) => ({ key, label: window.TimeOfDay.LABELS[key] }));
 
                 weekDates.forEach(({ date, dateKey }) => {
                     const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
@@ -2405,12 +2401,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         empty.textContent = 'No tasks';
                         list.appendChild(empty);
                     } else {
-                        const sections = [
-                            { key: 'anytime', label: 'Due Today' },
-                            { key: 'morning', label: 'Morning' },
-                            { key: 'afternoon', label: 'Afternoon' },
-                            { key: 'evening', label: 'Evening' }
-                        ];
+                        const sections = window.TimeOfDay.ORDER.map((key) => ({ key, label: window.TimeOfDay.LABELS[key] }));
 
                         sections.forEach((section) => {
                             const sectionItems = items.filter(({ task }) => (task.time_of_day || 'anytime') === section.key);
@@ -3395,7 +3386,11 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php if (empty($completed_tasks)): ?>
                             <p>No tasks waiting approval.</p>
                         <?php else: ?>
-                            <?php foreach ($completed_tasks as $task): ?>
+                            <?php $lastTodGroup = null; ?>
+                            <?php foreach (sortTasksForTimeOfDayDisplay($completed_tasks) as $task): ?>
+                            <?php if (($task['_tod_group'] ?? null) !== $lastTodGroup): $lastTodGroup = $task['_tod_group']; ?>
+                                <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($lastTodGroup); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($lastTodGroup); ?></div>
+                            <?php endif; ?>
                             <?php
                                 $timeOfDay = $task['time_of_day'] ?? 'anytime';
                                 $isOnce = empty($task['recurrence']);
@@ -3493,7 +3488,11 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php if (empty($pending_tasks)): ?>
                             <p>No active tasks.</p>
                         <?php else: ?>
-                            <?php foreach ($pending_tasks as $task): ?>
+                            <?php $lastTodGroup = null; ?>
+                            <?php foreach (sortTasksForTimeOfDayDisplay($pending_tasks) as $task): ?>
+                        <?php if (($task['_tod_group'] ?? null) !== $lastTodGroup): $lastTodGroup = $task['_tod_group']; ?>
+                            <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($lastTodGroup); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($lastTodGroup); ?></div>
+                        <?php endif; ?>
                         <?php
                         $today_key = date('Y-m-d');
                         $instance_today = $taskInstancesByTask[(int) $task['id']][$today_key] ?? null;
@@ -3715,7 +3714,11 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                         <?php if (empty($completed_tasks)): ?>
                             <p>No tasks waiting approval.</p>
                         <?php else: ?>
-                            <?php foreach ($completed_tasks as $task): ?>
+                            <?php $lastTodGroup = null; ?>
+                            <?php foreach (sortTasksForTimeOfDayDisplay($completed_tasks) as $task): ?>
+                            <?php if (($task['_tod_group'] ?? null) !== $lastTodGroup): $lastTodGroup = $task['_tod_group']; ?>
+                                <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($lastTodGroup); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($lastTodGroup); ?></div>
+                            <?php endif; ?>
                             <?php
                                 $timeOfDay = $task['time_of_day'] ?? 'anytime';
                                 $isOnce = empty($task['recurrence']);
@@ -4056,26 +4059,27 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                     foreach ($pending_tasks as $t) { $t['_status'] = 'todo'; $childAllTasks[] = $t; }
                     foreach ($completed_tasks as $t) { $t['_status'] = 'waiting'; $childAllTasks[] = $t; }
                     foreach ($approved_tasks as $t) { $t['_status'] = 'done'; $childAllTasks[] = $t; }
-                    $todOrder = ['morning'=>0,'afternoon'=>1,'evening'=>2,'anytime'=>3];
-                    usort($childAllTasks, function($a,$b) use ($todOrder) {
-                        return ($todOrder[$a['time_of_day']??'anytime']??3) <=> ($todOrder[$b['time_of_day']??'anytime']??3);
-                    });
-                    $childByTod = [];
-                    foreach ($childAllTasks as $t) { $childByTod[$t['time_of_day']??'anytime'][] = $t; }
-                    $todLabels = ['morning'=>'Morning','afternoon'=>'Afternoon','evening'=>'Evening','anytime'=>'Anytime'];
+                    // Shared grouping helpers: Morning -> Afternoon -> Evening
+                    // -> Anytime, sorted within each group; empty groups hidden.
+                    $childByTod = groupByTimeOfDay($childAllTasks);
                 ?>
                 <?php if (empty($childAllTasks)): ?>
                     <p style="padding:16px var(--mobile-pad);">No tasks for today.</p>
                 <?php else: ?>
-                <?php foreach ($childByTod as $tod => $todTasks): ?>
-                    <div class="tc-tod-label"><?php echo $todLabels[$tod] ?? ucfirst($tod); ?></div>
+                <?php foreach (timeOfDayOrder() as $tod): ?>
+                    <?php
+                        $todTasks = $childByTod[$tod];
+                        if (empty($todTasks)) { continue; }
+                        usort($todTasks, 'compareWithinTimeOfDayGroup');
+                    ?>
+                    <div class="tc-tod-label"><i class="fa-solid <?php echo timeOfDayIcon($tod); ?>" aria-hidden="true"></i> <?php echo timeOfDayLabel($tod); ?></div>
                     <?php foreach ($todTasks as $task): ?>
                         <?php
                             $catKey = $task['category'] ?? '';
                             $catColor = $catColorsFl[$catKey] ?? '#6D28D9';
                             $circleBg = $catCircleBg[$catKey] ?? '#f3edff';
                             $status = $task['_status'];
-                            $todDisplay = $todLabels[$task['time_of_day']??'anytime'] ?? 'Anytime';
+                            $todDisplay = timeOfDayLabel($task['time_of_day'] ?? 'anytime');
                             $catDisplay = ucfirst($catKey ?: 'Task');
                             $pts = (int)($task['points'] ?? 0);
                             $taskId = (int)$task['id'];

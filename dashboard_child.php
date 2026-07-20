@@ -285,6 +285,7 @@ function renderStreakCheckSvg($suffix) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Child Dashboard</title>
    <link rel="stylesheet" href="css/main.css?v=3.27.0">
+   <script src="js/time-of-day.js?v=3.27.0"></script>
     <link rel="stylesheet" href="css/child.css?v=3.27.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
@@ -622,12 +623,7 @@ function renderStreakCheckSvg($suffix) {
                     'fa-solid fa-list-check': 'var(--color-primary)',
                     'fa-solid fa-bullseye':   'var(--color-cat-learning)',
                 };
-                const sections = [
-                    { key: 'anytime',   label: 'Due Today' },
-                    { key: 'morning',   label: 'Morning' },
-                    { key: 'afternoon', label: 'Afternoon' },
-                    { key: 'evening',   label: 'Evening' }
-                ];
+                const sections = window.TimeOfDay.ORDER.map((key) => ({ key, label: window.TimeOfDay.LABELS[key], icon: window.TimeOfDay.ICONS[key] }));
                 const buildItem = (item) => {
                     const color = stripColors[item.icon] || 'var(--color-primary)';
                     let actionHtml = '';
@@ -665,10 +661,10 @@ function renderStreakCheckSvg($suffix) {
                         '</div>';
                 };
                 const sectionHtml = sections.map(section => {
-                    const sectionItems = items.filter(item => item.time_of_day === section.key);
+                    const sectionItems = items.filter(item => window.TimeOfDay.normalize(item.time_of_day) === section.key);
                     if (!sectionItems.length) return '';
                     return '<div class="task-group">' +
-                        '<div class="task-group__label">' + section.label + '</div>' +
+                        '<div class="task-group__label"><i class="fa-solid ' + section.icon + '" aria-hidden="true"></i> ' + section.label + '</div>' +
                         '<div class="card-list">' + sectionItems.map(buildItem).join('') + '</div>' +
                         '</div>';
                 }).join('');
