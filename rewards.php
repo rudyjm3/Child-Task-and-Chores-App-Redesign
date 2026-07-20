@@ -808,7 +808,7 @@ foreach ($children as $child) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<?php $pageTitle = 'Rewards Shop'; include __DIR__ . '/includes/html_head.php'; ?>
+<?php $pageTitle = 'Rewards Shop'; $extraHeadCss = ['css/parent.css?v=' . APP_VERSION]; include __DIR__ . '/includes/html_head.php'; ?>
     <style>
         body { font-family: Arial, sans-serif; background: #f5f7fb; }
         .page { max-width: 960px; margin: 20px auto; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
@@ -955,7 +955,10 @@ foreach ($children as $child) {
         .help-section ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: #455a64; }
     </style>
 </head>
-<body>
+<body class="role-parent">
+    <div class="parent-page">
+    <?php include __DIR__ . '/includes/sidebar.php'; ?>
+    <div class="parent-main">
     <?php $pageHeading = 'Rewards Shop'; include __DIR__ . '/includes/page_header.php'; ?>
     <main class="page-wrapper" style="padding: 0 20px 40px;">
 
@@ -1440,6 +1443,8 @@ $hasRecentMore = $recentTotal > $recentLimit;
     </div>
     </main>
     <?php include __DIR__ . '/includes/page_footer.php'; ?>
+    </div><!-- /.parent-main -->
+    </div><!-- /.parent-page -->
   <script src="js/number-stepper.js" defer></script>
 <?php if (!empty($isParentNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_parent.php'; ?>

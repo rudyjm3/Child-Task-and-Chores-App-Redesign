@@ -10,6 +10,7 @@ if (!isset($dashboardPage)) {
 }
 
 $dashboardActive = $currentPage === $dashboardPage;
+$childrenActive  = $currentPage === 'children.php';
 $routinesActive  = $currentPage === 'routine.php';
 $tasksActive     = $currentPage === 'task.php';
 $goalsActive     = $currentPage === 'goal.php';
@@ -57,6 +58,12 @@ $profileActive   = $currentPage === 'profile.php';
                 <i class="fa-solid fa-house"></i>
                 <span>Dashboard</span>
             </a>
+            <?php if (($_SESSION['role'] ?? '') !== 'child'): ?>
+            <a class="nav-link<?php echo $childrenActive ? ' is-active' : ''; ?>" href="children.php"<?php echo $childrenActive ? ' aria-current="page"' : ''; ?>>
+                <i class="fa-solid fa-children"></i>
+                <span>Children</span>
+            </a>
+            <?php endif; ?>
             <a class="nav-link<?php echo $routinesActive ? ' is-active' : ''; ?>" href="routine.php"<?php echo $routinesActive ? ' aria-current="page"' : ''; ?>>
                 <i class="fa-solid fa-repeat week-item-icon"></i>
                 <span>Routines</span>

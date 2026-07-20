@@ -1,6 +1,6 @@
 /* css/parent.css — Parent-specific styles
    Include in parent-facing pages: dashboard_parent.php, task.php (parent), goal.php (parent)
-   Version: 3.27.0 */
+   Version: 3.28.0 */
 
 /* ─────────────────────────────────────────
    1. Parent Page Layout
@@ -230,7 +230,326 @@
 }
 
 /* ─────────────────────────────────────────
-   8. Desktop Layout (1024px+)
+   7b. Dashboard desktop-only pieces
+───────────────────────────────────────── */
+/* 4th stat chip, Today's Schedule column, and weekly chart appear at 1024px+ */
+.stat-chip--desktop { display: none; }
+.dash-today-schedule { display: none; }
+.family-weekly-progress { display: none; }
+
+/* Child mini-card desktop extras (banner, points, task progress) */
+.child-card-mini__banner { display: none; }
+.child-card-mini__points { display: none; }
+.child-card-mini__progress { display: none; }
+.child-card-mini__tasks { display: none; }
+
+/* Today's Schedule compact rows */
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 12px 14px 12px 18px;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  min-height: 72px;
+}
+
+.today-row__strip {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  background: var(--color-cat-chore);
+}
+
+.today-row--routine .today-row__strip { background: var(--color-accent); }
+.today-row--task .today-row__strip { background: var(--color-primary); }
+
+.today-row__icon {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.today-row--routine .today-row__icon {
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+}
+
+.today-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.today-row__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.today-row__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--color-text-sec);
+}
+
+.today-row__meta .child-name-chip { margin-bottom: 0; }
+
+.today-row__end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Family Weekly Progress chart */
+.family-weekly-progress {
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 20px 24px;
+  margin: 24px var(--mobile-pad) 0;
+}
+
+.family-weekly-progress__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.family-weekly-progress__header h2 {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+  margin: 0;
+}
+
+.family-weekly-progress__meta {
+  font-size: var(--text-base);
+  color: var(--color-text-sec);
+}
+
+.family-weekly-progress__bars {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 16px;
+  align-items: end;
+}
+
+.family-weekly-progress__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.family-weekly-progress__track {
+  width: 100%;
+  max-width: 64px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-light);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.family-weekly-progress__fill {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-primary);
+  transition: height 300ms ease;
+}
+
+.family-weekly-progress__fill.is-today { background: var(--color-gold); }
+
+.family-weekly-progress__label {
+  font-size: var(--text-sm);
+  color: var(--color-text-sec);
+  font-weight: 400;
+}
+
+.family-weekly-progress__label.is-today {
+  color: var(--color-gold);
+  font-weight: 700;
+}
+
+/* ─────────────────────────────────────────
+   8. Sidebar (desktop only)
+───────────────────────────────────────── */
+.parent-sidebar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .parent-sidebar {
+    display: flex;
+    flex-direction: column;
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    background: var(--color-white);
+    box-shadow: var(--shadow-header);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    z-index: var(--z-sidebar);
+  }
+
+  .parent-sidebar__logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 80px;
+    padding: 0 20px;
+    background: var(--gradient-primary);
+    color: var(--color-white);
+    flex-shrink: 0;
+  }
+
+  .parent-sidebar__logo-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.22);
+    font-size: var(--text-xl);
+  }
+
+  .parent-sidebar__logo-text {
+    font-size: var(--text-2xl);
+    font-weight: 700;
+  }
+
+  .parent-sidebar__nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .parent-sidebar__link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 44px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-md);
+    font-weight: 400;
+    color: var(--color-text-sec);
+    text-decoration: none;
+    position: relative;
+    transition: background 150ms ease, color 150ms ease;
+  }
+
+  .parent-sidebar__link i {
+    width: 20px;
+    text-align: center;
+    opacity: 0.55;
+  }
+
+  .parent-sidebar__link:hover {
+    background: var(--color-slate);
+    color: var(--color-text-dark);
+  }
+
+  .parent-sidebar__link.is-active {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  .parent-sidebar__link.is-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 4px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+  }
+
+  .parent-sidebar__link.is-active i {
+    opacity: 1;
+  }
+
+  .parent-sidebar__user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px;
+    padding: 10px 12px;
+    height: 64px;
+    border-radius: var(--radius-lg);
+    background: var(--color-slate);
+    flex-shrink: 0;
+  }
+
+  .parent-sidebar__user-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    background: var(--gradient-primary);
+    color: var(--color-white);
+    font-weight: 700;
+    font-size: var(--text-xl);
+    flex-shrink: 0;
+  }
+
+  .parent-sidebar__user-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .parent-sidebar__user-name {
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--color-text-dark);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .parent-sidebar__user-role {
+    font-size: var(--text-sm);
+    color: var(--color-text-sec);
+  }
+}
+
+/* ─────────────────────────────────────────
+   9. Desktop Layout (1024px+)
 ───────────────────────────────────────── */
 @media (min-width: 1024px) {
   .parent-page {
@@ -243,6 +562,12 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  /* Sidebar replaces the horizontal nav on desktop */
+  .parent-header__nav,
+  .role-parent .page-header .nav-links {
+    display: none;
   }
 
   .parent-header__search {
@@ -292,5 +617,61 @@
     grid-template-columns: 1fr 1fr;
     gap: 20px;
     align-items: start;
+  }
+
+  /* Dashboard desktop pieces */
+  .stat-chip--desktop { display: block; }
+  .dash-today-schedule { display: block; }
+  .family-weekly-progress { display: block; margin: 24px var(--mobile-pad) 0; }
+
+  .quick-glance-row .stat-chip { flex: 1; padding: 20px; }
+  .quick-glance-row .stat-chip__value { font-size: var(--text-hero); }
+
+  /* Child mini-cards grow into full cards with gradient banner + progress */
+  .children-scroll-row { flex-wrap: wrap; overflow-x: visible; }
+  .child-card-mini {
+    width: calc((100% - 32px) / 3);
+    min-width: 240px;
+    padding: 0 0 16px;
+    align-items: flex-start;
+  }
+  .child-card-mini__banner {
+    display: block;
+    width: 100%;
+    height: 40px;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+  .child-card-mini__avatar { margin: -26px 0 0 16px; border: 3px solid var(--color-white); }
+  .child-card-mini__name { padding: 0 16px; }
+  .child-card-mini__level { margin: 0 16px; }
+  .child-card-mini__points {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 16px 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--color-gold);
+  }
+  .child-card-mini__progress {
+    display: block;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary-light);
+    margin: 8px 16px 0;
+    width: calc(100% - 32px);
+    overflow: hidden;
+  }
+  .child-card-mini__progress-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-primary);
+  }
+  .child-card-mini__tasks {
+    display: block;
+    margin: 4px 16px 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-sec);
   }
 }
