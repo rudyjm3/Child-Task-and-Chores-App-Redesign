@@ -317,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $logged = 0;
         foreach ($payload as $entry) {
             $routineId = isset($entry['routine_id']) ? (int) $entry['routine_id'] : 0;
-            $taskId = isset($entry['routine_task_id']) ? (int) $entry['routine_task_id'] : 0;
+            $taskId = isset($entry['preset_task_id']) ? (int) $entry['preset_task_id'] : 0;
             $scheduled = isset($entry['scheduled_seconds']) ? (int) $entry['scheduled_seconds'] : 0;
             $actual = isset($entry['actual_seconds']) ? (int) $entry['actual_seconds'] : 0;
             $overtime = isset($entry['overtime_seconds']) ? (int) $entry['overtime_seconds'] : 0;
@@ -337,7 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         echo json_encode(['status' => 'ok', 'logged' => $logged]);
         exit;
-    } elseif ($action === 'reset_routine_tasks') {
+    } elseif ($action === 'reset_routine_steps') {
         header('Content-Type: application/json');
         if (!isset($_SESSION['user_id'])) {
             http_response_code(403);
@@ -379,7 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         $routineId = filter_input(INPUT_POST, 'routine_id', FILTER_VALIDATE_INT);
-        $taskId = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $taskId = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
         $status = isset($_POST['status']) ? (string) $_POST['status'] : '';
         if (!$routineId || !$taskId || !in_array($status, ['pending', 'completed'], true)) {
             http_response_code(400);
@@ -931,7 +931,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($isParentContext && isset($_POST['update_routine_task'])) {
-        $preset_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
         $title = trim((string) filter_input(INPUT_POST, 'edit_rt_title', FILTER_SANITIZE_STRING));
         $description = trim((string) filter_input(INPUT_POST, 'edit_rt_description', FILTER_SANITIZE_STRING));
         $time_limit = filter_input(INPUT_POST, 'edit_rt_time_limit', FILTER_VALIDATE_INT);
@@ -1018,7 +1018,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($isParentContext && isset($_POST['delete_routine_task'])) {
-        $preset_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
         $deleteResult = $preset_task_id ? deletePresetTask($preset_task_id, $family_root_id) : false;
         if ($deleteResult === 'deleted') {
             $messages[] = ['type' => 'success', 'text' => 'Preset task deleted.'];
@@ -1030,7 +1030,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messages[] = ['type' => 'error', 'text' => 'Unable to delete preset task.'];
         }
     } elseif ($isParentContext && isset($_POST['archive_preset_task'])) {
-        $preset_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
         if ($preset_task_id && archivePresetTask($preset_task_id, $family_root_id)) {
             $messages[] = ['type' => 'success', 'text' => 'Preset task archived. Existing routines and history keep their values.'];
             $preset_tasks = getPresetTasks($family_root_id, true);
@@ -1038,7 +1038,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messages[] = ['type' => 'error', 'text' => 'Unable to archive preset task.'];
         }
     } elseif ($isParentContext && isset($_POST['restore_preset_task'])) {
-        $preset_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
         if ($preset_task_id && restorePresetTask($preset_task_id, $family_root_id)) {
             $messages[] = ['type' => 'success', 'text' => 'Preset task restored.'];
             $preset_tasks = getPresetTasks($family_root_id, true);
@@ -2392,21 +2392,21 @@ margin-bottom: 20px;}
                                                         </button>
                                                         <?php if ($taskIsActive): ?>
                                                             <form method="POST">
-                                                                <input type="hidden" name="routine_task_id" value="<?php echo (int) $task['id']; ?>">
+                                                                <input type="hidden" name="preset_task_id" value="<?php echo (int) $task['id']; ?>">
                                                                 <button type="submit" name="archive_preset_task" class="icon-button" aria-label="Archive preset task" title="Archive">
                                                                     <i class="fa-solid fa-box-archive"></i>
                                                                 </button>
                                                             </form>
                                                         <?php else: ?>
                                                             <form method="POST">
-                                                                <input type="hidden" name="routine_task_id" value="<?php echo (int) $task['id']; ?>">
+                                                                <input type="hidden" name="preset_task_id" value="<?php echo (int) $task['id']; ?>">
                                                                 <button type="submit" name="restore_preset_task" class="icon-button" aria-label="Restore preset task" title="Restore">
                                                                     <i class="fa-solid fa-rotate-left"></i>
                                                                 </button>
                                                             </form>
                                                         <?php endif; ?>
                                                         <form method="POST" onsubmit="return confirm('Delete this preset task? If routines, tasks, or history still use it, it will be archived instead.');">
-                                                            <input type="hidden" name="routine_task_id" value="<?php echo (int) $task['id']; ?>">
+                                                            <input type="hidden" name="preset_task_id" value="<?php echo (int) $task['id']; ?>">
                                                             <button type="submit" name="delete_routine_task" class="icon-button danger" aria-label="Delete preset task">
                                                                 <i class="fa-solid fa-trash"></i>
                                                             </button>
@@ -2478,7 +2478,7 @@ margin-bottom: 20px;}
                                 <button type="button" class="task-modal-close" data-action="close-task-edit-modal" aria-label="Close edit preset task dialog"><i class="fa-solid fa-xmark"></i></button>
                                 <h3 id="task-edit-title">Edit Preset Task</h3>
                                 <form method="POST" class="library-form" autocomplete="off">
-                                    <input type="hidden" name="routine_task_id" value="">
+                                    <input type="hidden" name="preset_task_id" value="">
                                     <p class="library-edit-note"><i class="fa-solid fa-circle-info"></i> Changes apply to future use only. Existing routines, assigned tasks, and history keep their current values.</p>
                                     <div class="input-group">
                                         <label for="edit_rt_title">Title</label>
@@ -5036,7 +5036,7 @@ margin-bottom: 20px;}
                     if (scheduled > 0 && actualSeconds > scheduled) {
                         this.overtimeBuffer.push({
                             routine_id: parseInt(this.routine.id, 10) || 0,
-                            routine_task_id: parseInt(this.currentTask.id, 10) || 0,
+                            preset_task_id: parseInt(this.currentTask.id, 10) || 0,
                             child_user_id: parseInt(this.routine.child_user_id, 10) || 0,
                             scheduled_seconds: scheduled,
                             actual_seconds: actualSeconds,
@@ -5336,7 +5336,7 @@ margin-bottom: 20px;}
 
                 resetRoutineStatuses() {
                     const payload = new FormData();
-                    payload.append('action', 'reset_routine_tasks');
+                    payload.append('action', 'reset_routine_steps');
                     payload.append('routine_id', this.routine.id);
                     fetch('routine.php', { method: 'POST', body: payload })
                         .then(response => response.json())
@@ -5356,7 +5356,7 @@ margin-bottom: 20px;}
                     const payload = new FormData();
                     payload.append('action', 'set_routine_task_status');
                     payload.append('routine_id', this.routine.id);
-                    payload.append('routine_task_id', taskId);
+                    payload.append('preset_task_id', taskId);
                     payload.append('status', status);
                     fetch('routine.php', { method: 'POST', body: payload }).catch(() => {});
                 }
@@ -5500,7 +5500,7 @@ margin-bottom: 20px;}
             };
             const populateTaskEditModal = (button) => {
                 if (!taskEditModal || !button) return;
-                const idField = taskEditModal.querySelector('input[name="routine_task_id"]');
+                const idField = taskEditModal.querySelector('input[name="preset_task_id"]');
                 const titleField = taskEditModal.querySelector('input[name="edit_rt_title"]');
                 const descriptionField = taskEditModal.querySelector('textarea[name="edit_rt_description"]');
                 const timeLimitField = taskEditModal.querySelector('input[name="edit_rt_time_limit"]');
