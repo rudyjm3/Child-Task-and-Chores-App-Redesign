@@ -62,15 +62,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $photo_proof_required = !empty($_POST['photo_proof_required']) ? 1 : 0;
 
+        // Preset provenance: re-validate server-side that the chosen preset
+        // still exists, belongs to this family, and is active. If it was
+        // deactivated while the form was open, save the task as custom and say so.
+        $preset_task_id = filter_input(INPUT_POST, 'preset_task_id', FILTER_VALIDATE_INT);
+        $presetWarning = '';
+        if ($preset_task_id) {
+            $presetRow = getPresetTasksByIds($family_root_id, [$preset_task_id])[$preset_task_id] ?? null;
+            if (!$presetRow) {
+                $preset_task_id = null;
+                $presetWarning = ' The selected preset task no longer exists, so it was saved as a custom task.';
+            } elseif (isset($presetRow['is_active']) && (int) $presetRow['is_active'] === 0) {
+                $preset_task_id = null;
+                $presetWarning = ' The selected preset task was archived, so it was saved as a custom task.';
+            }
+        }
+
         if (!empty($child_ids) && canCreateContent($_SESSION['user_id'])) {
             $allOk = true;
             foreach ($child_ids as $child_user_id) {
-                $ok = createTask($family_root_id, $child_user_id, $title, $description, $due_date, $end_date, $points, $recurrence, $recurrence_days, $category, $timing_mode, $timer_minutes, $time_of_day, $photo_proof_required, $_SESSION['user_id']);
+                $ok = createTask($family_root_id, $child_user_id, $title, $description, $due_date, $end_date, $points, $recurrence, $recurrence_days, $category, $timing_mode, $timer_minutes, $time_of_day, $photo_proof_required, $_SESSION['user_id'], $preset_task_id ?: null);
                 if (!$ok) {
                     $allOk = false;
                 }
             }
-            $message = $allOk ? "Task created successfully!" : "Some tasks failed to create.";
+            $message = ($allOk ? "Task created successfully!" : "Some tasks failed to create.") . $presetWarning;
         } else {
             $message = "Select at least one child.";
         }
@@ -876,6 +892,13 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
         .task-create-modal.open { display: flex; }
         .task-create-card { background: #fff; border-radius: 14px; max-width: 860px; width: min(860px, 100%); max-height: 90vh; overflow: hidden; box-shadow: 0 12px 32px rgba(0,0,0,0.25); display: grid; grid-template-rows: auto 1fr; }
         .task-create-card header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e0e0e0; }
+        .task-create-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--color-primary-light, #EDE9FE); border-radius: var(--radius-md, 12px); padding: 12px 14px; margin-bottom: 14px; }
+        .task-create-mode__hint { flex: 1 1 220px; font-size: 0.85rem; color: var(--color-text-sec, #6B7280); }
+        .task-create-mode__actions .button { display: inline-flex; align-items: center; gap: 8px; }
+        .task-create-preset-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--color-white, #fff); border: 1px solid var(--color-primary-mid, #A78BFA); color: var(--color-text-dark, #1E1B4B); border-radius: var(--radius-full, 999px); padding: 6px 12px; font-size: 0.85rem; }
+        .task-create-preset-chip i { color: var(--color-primary, #6D28D9); }
+        .task-create-preset-chip button { border: none; background: transparent; color: var(--color-text-sec, #6B7280); font-size: 1rem; cursor: pointer; padding: 0 2px; }
+        .task-create-preset-chip button:hover { color: var(--color-danger, #DC2626); }
         .task-create-body { padding: 12px 16px 18px; overflow-y: auto; }
         .task-photo-thumb { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; border: 1px solid #d5def0; box-shadow: 0 2px 6px rgba(0,0,0,0.12); cursor: pointer; }
         .task-photo-proof { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
@@ -2153,6 +2176,66 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                     if (event.key === 'Escape') {
                         closeCreate();
                     }
+                });
+
+                // --- "Pick a Preset Task" flow ---
+                const presetIdField = createForm.querySelector('[data-preset-task-id]');
+                const presetChip = createForm.querySelector('[data-preset-chip]');
+                const presetChipTitle = createForm.querySelector('[data-preset-chip-title]');
+                const presetChipClear = createForm.querySelector('[data-preset-chip-clear]');
+                const presetPickerButton = createForm.querySelector('[data-open-preset-picker]');
+                const clearPresetSelection = () => {
+                    if (presetIdField) presetIdField.value = '';
+                    if (presetChip) presetChip.hidden = true;
+                };
+                const applyPresetToCreateForm = (preset) => {
+                    if (presetIdField) presetIdField.value = preset.id;
+                    if (presetChip && presetChipTitle) {
+                        presetChipTitle.textContent = preset.title;
+                        presetChip.hidden = false;
+                    }
+                    // Prefill assignment fields from the preset; everything stays
+                    // editable (assignment-level overrides never change the preset).
+                    createForm.querySelector('[name="title"]').value = preset.title || '';
+                    createForm.querySelector('[name="description"]').value = preset.description || '';
+                    if (preset.point_value) {
+                        createForm.querySelector('[name="points"]').value = preset.point_value;
+                    }
+                    createForm.querySelector('[name="category"]').value = preset.category || 'household';
+                    const todSelect = createForm.querySelector('[name="time_of_day"]');
+                    if (todSelect) {
+                        todSelect.value = window.TimeOfDay ? window.TimeOfDay.normalize(preset.default_time_of_day) : (preset.default_time_of_day || 'anytime');
+                        updateDueTimeVisibility(createForm.querySelector('[data-due-time-wrapper]'), todSelect);
+                    }
+                    const timingSelect = createForm.querySelector('[name="timing_mode"]');
+                    const timerInput = createForm.querySelector('[name="timer_minutes"]');
+                    if (timingSelect && timerInput) {
+                        if (preset.time_limit) {
+                            timingSelect.value = 'timer';
+                            timerInput.value = preset.time_limit;
+                        } else {
+                            timingSelect.value = 'no_limit';
+                            timerInput.value = '';
+                        }
+                        updateTimerField(createForm.querySelector('[data-create-timer-minutes]'), timingSelect);
+                    }
+                };
+                let presetPickerInstance = null;
+                if (presetPickerButton && window.PresetPicker) {
+                    presetPickerButton.addEventListener('click', () => {
+                        if (!presetPickerInstance) {
+                            presetPickerInstance = window.PresetPicker.create({
+                                onSelect: applyPresetToCreateForm
+                            });
+                        }
+                        presetPickerInstance.open();
+                    });
+                }
+                if (presetChipClear) {
+                    presetChipClear.addEventListener('click', clearPresetSelection);
+                }
+                createForm.addEventListener('reset', () => {
+                    setTimeout(clearPresetSelection, 0);
                 });
             }
 
@@ -4416,6 +4499,20 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                 <div class="task-create-body">
                     <form method="POST" action="task.php" enctype="multipart/form-data" data-create-task-form>
                         <?php $autoSelectChildId = count($children) === 1 ? (int) $children[0]['child_user_id'] : null; ?>
+                        <input type="hidden" name="preset_task_id" value="" data-preset-task-id>
+                        <div class="task-create-mode" data-task-create-mode>
+                            <span class="task-create-mode__hint">Start from a reusable preset, or fill in the details below for a custom task.</span>
+                            <div class="task-create-mode__actions">
+                                <button type="button" class="button secondary" data-open-preset-picker>
+                                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pick a Preset Task
+                                </button>
+                            </div>
+                            <div class="task-create-preset-chip" data-preset-chip hidden>
+                                <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+                                <span>From preset: <strong data-preset-chip-title></strong></span>
+                                <button type="button" data-preset-chip-clear aria-label="Clear preset selection and switch to custom task">&times;</button>
+                            </div>
+                        </div>
                         <div class="form-grid">
                             <div class="form-group">
                                 <label>Child</label>
@@ -4554,6 +4651,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
       <p>Child Task and Chore App - Ver 3.27.0</p>
     </footer>
   <script src="js/number-stepper.js?v=3.26.0" defer></script>
+  <script src="js/preset-picker.js?v=3.27.0"></script>
 <?php if (!empty($isParentNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_parent.php'; ?>
 <?php endif; ?>

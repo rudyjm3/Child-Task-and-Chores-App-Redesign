@@ -1187,9 +1187,12 @@ function getChildDashboardData($user_id) {
 }
 
 // Create a new task
-function createTask($parent_user_id, $child_user_id, $title, $description, $due_date, $end_date, $points, $recurrence, $recurrence_days, $category, $timing_mode, $timer_minutes = null, $time_of_day = 'anytime', $photo_proof_required = 0, $creator_user_id = null) {
+// $preset_task_id records which Preset Task the assignment was created from
+// (provenance only — all values are snapshotted onto this row, so later preset
+// edits never change the assignment).
+function createTask($parent_user_id, $child_user_id, $title, $description, $due_date, $end_date, $points, $recurrence, $recurrence_days, $category, $timing_mode, $timer_minutes = null, $time_of_day = 'anytime', $photo_proof_required = 0, $creator_user_id = null, $preset_task_id = null) {
     global $db;
-    $stmt = $db->prepare("INSERT INTO tasks (parent_user_id, child_user_id, title, description, due_date, end_date, points, recurrence, recurrence_days, category, timing_mode, timer_minutes, time_of_day, photo_proof_required, created_by) VALUES (:parent_id, :child_id, :title, :description, :due_date, :end_date, :points, :recurrence, :recurrence_days, :category, :timing_mode, :timer_minutes, :time_of_day, :photo_proof_required, :created_by)");
+    $stmt = $db->prepare("INSERT INTO tasks (parent_user_id, child_user_id, title, description, due_date, end_date, points, recurrence, recurrence_days, category, timing_mode, timer_minutes, time_of_day, photo_proof_required, created_by, preset_task_id) VALUES (:parent_id, :child_id, :title, :description, :due_date, :end_date, :points, :recurrence, :recurrence_days, :category, :timing_mode, :timer_minutes, :time_of_day, :photo_proof_required, :created_by, :preset_task_id)");
     return $stmt->execute([
         ':parent_id' => $parent_user_id,
         ':child_id' => $child_user_id,
@@ -1205,7 +1208,8 @@ function createTask($parent_user_id, $child_user_id, $title, $description, $due_
         ':timer_minutes' => $timer_minutes,
         ':time_of_day' => $time_of_day,
         ':photo_proof_required' => !empty($photo_proof_required) ? 1 : 0,
-        ':created_by' => $creator_user_id ?? $parent_user_id
+        ':created_by' => $creator_user_id ?? $parent_user_id,
+        ':preset_task_id' => $preset_task_id ?: null
     ]);
 }
 
