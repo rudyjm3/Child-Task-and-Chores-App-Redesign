@@ -2198,7 +2198,8 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                     // editable (assignment-level overrides never change the preset).
                     createForm.querySelector('[name="title"]').value = preset.title || '';
                     createForm.querySelector('[name="description"]').value = preset.description || '';
-                    if (preset.point_value) {
+                    // Zero is a valid preset point value - only skip when absent.
+                    if (preset.point_value !== undefined && preset.point_value !== null && preset.point_value !== '') {
                         createForm.querySelector('[name="points"]').value = preset.point_value;
                     }
                     createForm.querySelector('[name="category"]').value = preset.category || 'household';
@@ -4282,7 +4283,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                                 </div>
                                 <div class="form-group">
                                     <label>Points</label>
-                                    <input type="number" name="points" min="1" value="" required>
+                                    <input type="number" name="points" min="0" value="" required>
                                 </div>
                                 <div class="form-group">
                                     <label>Repeat</label>
@@ -4536,7 +4537,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
                             </div>
                             <div class="form-group">
                                 <label for="points">Points</label>
-                                <input type="number" id="points" name="points" min="1" required>
+                                <input type="number" id="points" name="points" min="0" required>
                             </div>
                             <div class="form-group repeat-group">
                                 <label for="recurrence">Repeat</label>
