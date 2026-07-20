@@ -3720,7 +3720,7 @@ function rejectGoal($goal_id, $parent_user_id, $rejection_comment, &$error = nul
 }
 
 // **[New] Routine Task Functions **
-function createPresetTask($parent_user_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds = null, $minimum_enabled = 0, $icon_url = null, $audio_url = null, $creator_user_id = null) {
+function createPresetTask($parent_user_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds = null, $minimum_enabled = 0, $icon_url = null, $audio_url = null, $creator_user_id = null, $default_time_of_day = 'anytime') {
     global $db;
     if ($minimum_seconds !== null) {
         $minimum_seconds = max(0, (int) $minimum_seconds);
@@ -3730,7 +3730,10 @@ function createPresetTask($parent_user_id, $title, $description, $time_limit, $p
         $minimum_seconds = null;
         $minimum_enabled = 0;
     }
-    $stmt = $db->prepare("INSERT INTO preset_tasks (parent_user_id, title, description, time_limit, point_value, category, minimum_seconds, minimum_enabled, icon_url, audio_url, created_by) VALUES (:parent_id, :title, :description, :time_limit, :point_value, :category, :minimum_seconds, :minimum_enabled, :icon_url, :audio_url, :created_by)");
+    if (!in_array($default_time_of_day, ['anytime', 'morning', 'afternoon', 'evening'], true)) {
+        $default_time_of_day = 'anytime';
+    }
+    $stmt = $db->prepare("INSERT INTO preset_tasks (parent_user_id, title, description, time_limit, point_value, category, minimum_seconds, minimum_enabled, default_time_of_day, icon_url, audio_url, created_by) VALUES (:parent_id, :title, :description, :time_limit, :point_value, :category, :minimum_seconds, :minimum_enabled, :default_time_of_day, :icon_url, :audio_url, :created_by)");
     return $stmt->execute([
         ':parent_id' => $parent_user_id,
         ':title' => $title,
@@ -3740,18 +3743,64 @@ function createPresetTask($parent_user_id, $title, $description, $time_limit, $p
         ':category' => $category,
         ':minimum_seconds' => $minimum_seconds,
         ':minimum_enabled' => $minimum_enabled,
+        ':default_time_of_day' => $default_time_of_day,
         ':icon_url' => $icon_url,
         ':audio_url' => $audio_url,
         ':created_by' => $creator_user_id ?? $parent_user_id
     ]);
 }
 
-function getPresetTasks($parent_user_id) {
+function getPresetTasks($parent_user_id, $include_archived = false) {
     global $db;
     // Include global defaults (parent_id = 0) and parent-specific
-    $stmt = $db->prepare("SELECT * FROM preset_tasks WHERE parent_user_id = 0 OR parent_user_id = :parent_id");
+    $sql = "SELECT * FROM preset_tasks WHERE (parent_user_id = 0 OR parent_user_id = :parent_id)";
+    if (!$include_archived) {
+        $sql .= " AND is_active = 1";
+    }
+    $sql .= " ORDER BY title ASC";
+    $stmt = $db->prepare($sql);
     $stmt->execute([':parent_id' => $parent_user_id]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// How many places reference this preset. Any nonzero total means the preset
+// must be archived rather than hard-deleted so history stays intact.
+function presetTaskReferenceCounts($preset_task_id) {
+    global $db;
+    $counts = [];
+    $queries = [
+        'routine_steps' => "SELECT COUNT(*) FROM routine_preset_tasks WHERE preset_task_id = :id",
+        'tasks' => "SELECT COUNT(*) FROM tasks WHERE preset_task_id = :id",
+        'history' => "SELECT COUNT(*) FROM routine_completion_tasks WHERE preset_task_id = :id",
+        'overtime' => "SELECT COUNT(*) FROM routine_overtime_logs WHERE preset_task_id = :id",
+    ];
+    $total = 0;
+    foreach ($queries as $key => $sql) {
+        try {
+            $stmt = $db->prepare($sql);
+            $stmt->execute([':id' => $preset_task_id]);
+            $counts[$key] = (int) $stmt->fetchColumn();
+        } catch (PDOException $e) {
+            $counts[$key] = 0;
+        }
+        $total += $counts[$key];
+    }
+    $counts['total'] = $total;
+    return $counts;
+}
+
+function archivePresetTask($preset_task_id, $parent_user_id) {
+    global $db;
+    $stmt = $db->prepare("UPDATE preset_tasks SET is_active = 0, archived_at = NOW() WHERE id = :id AND parent_user_id = :parent_id AND is_active = 1");
+    $stmt->execute([':id' => $preset_task_id, ':parent_id' => $parent_user_id]);
+    return $stmt->rowCount() > 0;
+}
+
+function restorePresetTask($preset_task_id, $parent_user_id) {
+    global $db;
+    $stmt = $db->prepare("UPDATE preset_tasks SET is_active = 1, archived_at = NULL WHERE id = :id AND parent_user_id = :parent_id AND is_active = 0");
+    $stmt->execute([':id' => $preset_task_id, ':parent_id' => $parent_user_id]);
+    return $stmt->rowCount() > 0;
 }
 
 function getPresetTasksByIds($parent_user_id, array $task_ids) {
@@ -3980,23 +4029,30 @@ function updatePresetTask($preset_task_id, $updates) {
     return $stmt->execute($params);
 }
 
+// Deletes a preset only when nothing references it; otherwise archives it so
+// routine steps, assignments, completion history, and overtime reports stay
+// intact. Returns 'deleted', 'archived', or false.
 function deletePresetTask($preset_task_id, $parent_user_id) {
     global $db;
-    // Remove routine step rows first (the junction FK is RESTRICT); dependency
-    // references clear via fk_rps_dependency SET NULL, and history rows keep
-    // their snapshots via fk_rct_preset/fk_rol_preset SET NULL.
-    $db->beginTransaction();
-    try {
-        $stmt = $db->prepare("DELETE rps FROM routine_preset_tasks rps
-                              JOIN preset_tasks pt ON pt.id = rps.preset_task_id
-                              WHERE rps.preset_task_id = :id AND pt.parent_user_id = :parent_id");
+    $refs = presetTaskReferenceCounts($preset_task_id);
+    if ($refs['total'] > 0) {
+        // Already-archived presets simply stay archived.
+        $stmt = $db->prepare("SELECT is_active FROM preset_tasks WHERE id = :id AND parent_user_id = :parent_id");
         $stmt->execute([':id' => $preset_task_id, ':parent_id' => $parent_user_id]);
+        $isActive = $stmt->fetchColumn();
+        if ($isActive === false) {
+            return false;
+        }
+        if ((int) $isActive === 0 || archivePresetTask($preset_task_id, $parent_user_id)) {
+            return 'archived';
+        }
+        return false;
+    }
+    try {
         $stmt = $db->prepare("DELETE FROM preset_tasks WHERE id = :id AND parent_user_id = :parent_id");
-        $result = $stmt->execute([':id' => $preset_task_id, ':parent_id' => $parent_user_id]);
-        $db->commit();
-        return $result;
+        $stmt->execute([':id' => $preset_task_id, ':parent_id' => $parent_user_id]);
+        return $stmt->rowCount() > 0 ? 'deleted' : false;
     } catch (Exception $e) {
-        $db->rollBack();
         error_log("Failed to delete preset task $preset_task_id: " . $e->getMessage());
         return false;
     }
