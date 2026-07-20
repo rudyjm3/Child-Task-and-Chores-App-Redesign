@@ -100,17 +100,17 @@ if ($isParentContext) {
             $taskStmt = $db->prepare("
                 SELECT
                     rct.completion_log_id,
-                    rct.routine_task_id,
+                    rct.preset_task_id,
                     rct.sequence_order,
                     rct.completed_at,
                     rct.status_screen_seconds,
                     rct.scheduled_seconds,
                     rct.actual_seconds,
                     rct.stars_awarded,
-                    rt.title AS task_title,
-                    rt.time_limit AS task_time_limit
+                    COALESCE(rct.task_title, pt.title, 'Removed task') AS task_title,
+                    pt.time_limit AS task_time_limit
                 FROM routine_completion_tasks rct
-                LEFT JOIN routine_tasks rt ON rct.routine_task_id = rt.id
+                LEFT JOIN preset_tasks pt ON rct.preset_task_id = pt.id
                 WHERE rct.completion_log_id IN ($placeholders)
                 ORDER BY rct.completion_log_id DESC, rct.sequence_order ASC, rct.id ASC
             ");
@@ -209,7 +209,7 @@ function normalizeRoutineStructure(?string $rawStructure, int $family_root_id, a
         }
     }
     $taskIds = array_values(array_unique($taskIds));
-    $taskMap = getRoutineTasksByIds($family_root_id, $taskIds);
+    $taskMap = getPresetTasksByIds($family_root_id, $taskIds);
     if (count($taskMap) !== count($taskIds)) {
         $errors[] = 'One or more selected routine tasks are no longer available.';
     }
@@ -352,7 +352,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             echo json_encode(['status' => 'error', 'message' => 'Routine not assigned to this child.']);
             exit;
         }
-        $reset = resetRoutineTaskStatuses($routineId);
+        $reset = resetRoutineStepStatuses($routineId);
         if ($reset && isset($_SESSION['routine_awards'][$routineId])) {
             unset($_SESSION['routine_awards'][$routineId]);
         }
@@ -404,7 +404,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             echo json_encode(['status' => 'not_today', 'message' => $message]);
             exit;
         }
-        $updated = setRoutineTaskStatus($routineId, $taskId, $status);
+        $updated = setRoutineStepStatus($routineId, $taskId, $status);
         echo json_encode(['status' => $updated ? 'ok' : 'error']);
         exit;
     } elseif ($action === 'complete_routine_flow') {
@@ -551,7 +551,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'awarded_points' => $awardedPoints,
                 'stars_awarded' => $starsAwarded
             ];
-            setRoutineTaskStatus($routineId, $taskId, 'completed');
+            setRoutineStepStatus($routineId, $taskId, 'completed');
         }
 
         $bonusPossible = max(0, (int) ($routine['bonus_points'] ?? 0));
@@ -586,6 +586,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if (!$completedAt) {
             $completedAt = date('Y-m-d H:i:s');
         }
+        $awardedById = [];
+        foreach ($awards as $awardEntry) {
+            $awardedById[(int) $awardEntry['id']] = (int) ($awardEntry['awarded_points'] ?? 0);
+        }
         $completionTasks = [];
         foreach ($taskLookup as $taskId => $taskRow) {
             $metric = $metricsById[$taskId] ?? [];
@@ -602,13 +606,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $actualSeconds = (int) ($metric['actual_seconds'] ?? 0);
             }
             $completionTasks[] = [
-                'routine_task_id' => $taskId,
+                'preset_task_id' => $taskId,
                 'sequence_order' => (int) ($taskRow['sequence_order'] ?? 0),
                 'completed_at' => $taskCompletedAt,
                 'scheduled_seconds' => $scheduledSeconds,
                 'actual_seconds' => $actualSeconds,
                 'status_screen_seconds' => max(0, (int) ($metric['status_screen_seconds'] ?? 0)),
-                'stars_awarded' => calculateRoutineTaskStars((int) ($scheduledSeconds ?? 0), (int) ($actualSeconds ?? 0))
+                'stars_awarded' => calculateRoutineTaskStars((int) ($scheduledSeconds ?? 0), (int) ($actualSeconds ?? 0)),
+                'task_title' => $taskRow['title'] ?? null,
+                'points_awarded' => $awardedById[$taskId] ?? 0
             ];
         }
         if ($parentIdForLog > 0) {
@@ -723,7 +729,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $createdCount = 0;
                 foreach ($childIds as $cid) {
                     $routineId = createRoutine($family_root_id, $cid, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day, $recurrence_days, $routine_date, $_SESSION['user_id']);
-                    replaceRoutineTasks($routineId, $normalizedTasks);
+                    replaceRoutineSteps($routineId, $normalizedTasks);
                     $createdCount++;
                 }
                 $db->commit();
@@ -814,13 +820,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $primaryChildId = $currentChildId;
                 }
                 updateRoutine($routine_id, $primaryChildId, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day, $recurrence_days, $routine_date, $family_root_id);
-                replaceRoutineTasks($routine_id, $normalizedTasks);
+                replaceRoutineSteps($routine_id, $normalizedTasks);
                 $extraChildren = array_values(array_filter($childIds, static function ($id) use ($primaryChildId) {
                     return (int) $id !== (int) $primaryChildId;
                 }));
                 foreach ($extraChildren as $cid) {
                     $newRoutineId = createRoutine($family_root_id, $cid, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day, $recurrence_days, $routine_date, $_SESSION['user_id']);
-                    replaceRoutineTasks($newRoutineId, $normalizedTasks);
+                    replaceRoutineSteps($newRoutineId, $normalizedTasks);
                 }
                 $db->commit();
                 if (!empty($extraChildren)) {
@@ -894,27 +900,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($title === '' || $time_limit === null) {
             $messages[] = ['type' => 'error', 'text' => 'Routine task needs a title and a positive time limit.'];
         } else {
-            if (createRoutineTask($family_root_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds, $min_toggle, null, null, $_SESSION['user_id'])) {
+            if (createPresetTask($family_root_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds, $min_toggle, null, null, $_SESSION['user_id'])) {
                 $messages[] = ['type' => 'success', 'text' => 'Routine task added to the library.'];
-                $routine_tasks = getRoutineTasks($family_root_id);
+                $preset_tasks = getPresetTasks($family_root_id);
             } else {
                 $messages[] = ['type' => 'error', 'text' => 'Failed to add routine task.'];
             }
         }
     } elseif ($isParentContext && isset($_POST['update_routine_task'])) {
-        $routine_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        $preset_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
         $title = trim((string) filter_input(INPUT_POST, 'edit_rt_title', FILTER_SANITIZE_STRING));
         $description = trim((string) filter_input(INPUT_POST, 'edit_rt_description', FILTER_SANITIZE_STRING));
         $time_limit = filter_input(INPUT_POST, 'edit_rt_time_limit', FILTER_VALIDATE_INT);
         $point_value = filter_input(INPUT_POST, 'edit_rt_point_value', FILTER_VALIDATE_INT);
         $category = filter_input(INPUT_POST, 'edit_rt_category', FILTER_SANITIZE_STRING);
 
-        if (!isset($routine_tasks) || !is_array($routine_tasks)) {
-            $routine_tasks = getRoutineTasks($family_root_id);
+        if (!isset($preset_tasks) || !is_array($preset_tasks)) {
+            $preset_tasks = getPresetTasks($family_root_id);
         }
         $existingTask = null;
-        foreach ($routine_tasks as $candidateTask) {
-            if ((int) ($candidateTask['id'] ?? 0) === (int) $routine_task_id) {
+        foreach ($preset_tasks as $candidateTask) {
+            if ((int) ($candidateTask['id'] ?? 0) === (int) $preset_task_id) {
                 $existingTask = $candidateTask;
                 break;
             }
@@ -970,12 +976,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $updates['minimum_enabled'] = 0;
         }
 
-        if (!$routine_task_id || empty($updates)) {
+        if (!$preset_task_id || empty($updates)) {
             $messages[] = ['type' => 'error', 'text' => 'Unable to update routine task.'];
         } else {
-            if (updateRoutineTask($routine_task_id, $updates)) {
+            if (updatePresetTask($preset_task_id, $updates)) {
                 $messages[] = ['type' => 'success', 'text' => 'Routine task updated.'];
-                $routine_tasks = getRoutineTasks($family_root_id);
+                $preset_tasks = getPresetTasks($family_root_id);
                 if ($minimumToggleError) {
                     $messages[] = ['type' => 'info', 'text' => 'Minimum time remained disabled because no positive duration was provided.'];
                 }
@@ -984,10 +990,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($isParentContext && isset($_POST['delete_routine_task'])) {
-        $routine_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
-        if ($routine_task_id && deleteRoutineTask($routine_task_id, $family_root_id)) {
+        $preset_task_id = filter_input(INPUT_POST, 'routine_task_id', FILTER_VALIDATE_INT);
+        if ($preset_task_id && deletePresetTask($preset_task_id, $family_root_id)) {
             $messages[] = ['type' => 'success', 'text' => 'Routine task removed from the library.'];
-            $routine_tasks = getRoutineTasks($family_root_id);
+            $preset_tasks = getPresetTasks($family_root_id);
         } else {
             $messages[] = ['type' => 'error', 'text' => 'Unable to delete routine task.'];
         }
@@ -1097,7 +1103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         $completionTimestampMap[$taskId] = $completedAtValue;
                     }
-                    setRoutineTaskStatus($routine_id, $taskId, $status, $completedAtValue);
+                    setRoutineStepStatus($routine_id, $taskId, $status, $completedAtValue);
                     if ($isSelected && empty($completedTodayMap[$taskId])) {
                         $awardedPoints += max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0));
                     }
@@ -1139,13 +1145,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         foreach ($tasks as $task) {
                             $taskId = (int) ($task['id'] ?? 0);
                             $completionTasks[] = [
-                                'routine_task_id' => $taskId,
+                                'preset_task_id' => $taskId,
                                 'sequence_order' => (int) ($task['sequence_order'] ?? 0),
                                 'completed_at' => $completionTimestampMap[$taskId] ?? null,
                                 'scheduled_seconds' => null,
                                 'actual_seconds' => null,
                                 'status_screen_seconds' => 0,
-                                'stars_awarded' => 3
+                                'stars_awarded' => 3,
+                                'task_title' => $task['title'] ?? null,
+                                'points_awarded' => (in_array($taskId, $selected, true) && empty($completedTodayMap[$taskId])) ? max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0)) : 0
                             ];
                         }
                         logRoutineCompletionSession($routine_id, $childId, $parentIdForLog, 'parent', $parentStartedAt, $parentCompletedAt, $completionTasks);
@@ -1173,7 +1181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$routine_tasks = $isParentContext ? getRoutineTasks($family_root_id) : [];
+$preset_tasks = $isParentContext ? getPresetTasks($family_root_id) : [];
 $routines = getRoutines($_SESSION['user_id']);
 $routineCompletionMap = [];
 if (getEffectiveRole($_SESSION['user_id']) === 'child') {
@@ -1302,7 +1310,7 @@ $pagePreferences = [
 
 $jsonOptions = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP;
 $pageState = [
-    'tasks' => $routine_tasks,
+    'tasks' => $preset_tasks,
     'createInitial' => $createBuilderInitial,
     'editInitial' => $editBuilderInitial,
     'routines' => $routines,
@@ -2187,7 +2195,7 @@ margin-bottom: 20px;}
                                             <label for="create-task-picker">Add Routine Task</label>
                                             <select id="create-task-picker" data-role="task-picker">
                                                 <option value="">Select task...</option>
-                                                <?php foreach ($routine_tasks as $task): ?>
+                                                <?php foreach ($preset_tasks as $task): ?>
                                                     <option value="<?php echo (int) $task['id']; ?>"><?php echo htmlspecialchars($task['title']); ?> (<?php echo (int) $task['time_limit']; ?> min)</option>
                                                 <?php endforeach; ?>
                                             </select>
@@ -2235,14 +2243,14 @@ margin-bottom: 20px;}
                                         </select>
                                     </div>
                                 </div>
-                                <?php if (empty($routine_tasks)): ?>
+                                <?php if (empty($preset_tasks)): ?>
                                     <p class="no-data">No routine tasks available yet. Add a task to start building routines.</p>
                                 <?php else: ?>
                                     <details class="library-collapse">
                                         <summary class="library-toggle">View Saved Library Tasks</summary>
                                         <div class="library-table-wrap">
                                             <div class="library-card-list">
-                                                <?php foreach ($routine_tasks as $task): ?>
+                                                <?php foreach ($preset_tasks as $task): ?>
                                                     <?php
                                                         $taskMinSeconds = isset($task['minimum_seconds']) ? (int) $task['minimum_seconds'] : 0;
                                                         $taskMinEnabled = !empty($task['minimum_enabled']);
@@ -2848,7 +2856,7 @@ margin-bottom: 20px;}
                                                             <label>Add Routine Task</label>
                                                             <select data-role="task-picker">
                                                                 <option value="">Select task...</option>
-                                                                <?php foreach ($routine_tasks as $task): ?>
+                                                                <?php foreach ($preset_tasks as $task): ?>
                                                                     <option value="<?php echo (int) $task['id']; ?>"><?php echo htmlspecialchars($task['title']); ?> (<?php echo (int) $task['time_limit']; ?> min)</option>
                                                                 <?php endforeach; ?>
                                                             </select>

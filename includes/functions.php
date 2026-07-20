@@ -1331,35 +1331,33 @@ function ensureRoutineCompletionTables() {
             FOREIGN KEY (parent_user_id) REFERENCES users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+    // task_title/points_awarded are completion-time snapshots so history stays
+    // accurate even if the preset is edited or deleted later (FK is SET NULL).
     $db->exec("
         CREATE TABLE IF NOT EXISTS routine_completion_tasks (
             id INT AUTO_INCREMENT PRIMARY KEY,
             completion_log_id INT NOT NULL,
-            routine_task_id INT NOT NULL,
+            preset_task_id INT NULL,
             sequence_order INT NOT NULL DEFAULT 0,
             completed_at DATETIME NULL,
             scheduled_seconds INT NULL,
             actual_seconds INT NULL,
             status_screen_seconds INT NOT NULL DEFAULT 0,
             stars_awarded TINYINT NOT NULL DEFAULT 0,
+            task_title VARCHAR(100) NULL,
+            points_awarded INT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_routine_completion_task (completion_log_id, sequence_order),
             FOREIGN KEY (completion_log_id) REFERENCES routine_completion_logs(id) ON DELETE CASCADE,
-            FOREIGN KEY (routine_task_id) REFERENCES routine_tasks(id) ON DELETE CASCADE
+            CONSTRAINT fk_rct_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     try {
         $db->exec("ALTER TABLE routine_completion_tasks ADD COLUMN IF NOT EXISTS scheduled_seconds INT NULL");
-    } catch (PDOException $e) {
-        // ignore if not supported
-    }
-    try {
         $db->exec("ALTER TABLE routine_completion_tasks ADD COLUMN IF NOT EXISTS actual_seconds INT NULL");
-    } catch (PDOException $e) {
-        // ignore if not supported
-    }
-    try {
         $db->exec("ALTER TABLE routine_completion_tasks ADD COLUMN IF NOT EXISTS stars_awarded TINYINT NOT NULL DEFAULT 0");
+        $db->exec("ALTER TABLE routine_completion_tasks ADD COLUMN IF NOT EXISTS task_title VARCHAR(100) NULL");
+        $db->exec("ALTER TABLE routine_completion_tasks ADD COLUMN IF NOT EXISTS points_awarded INT NULL");
     } catch (PDOException $e) {
         // ignore if not supported
     }
@@ -1626,9 +1624,9 @@ function logRoutineCompletionSession($routine_id, $child_id, $parent_id, $comple
         if ($logId && !empty($tasks)) {
             $taskStmt = $db->prepare("
                 INSERT INTO routine_completion_tasks
-                    (completion_log_id, routine_task_id, sequence_order, completed_at, scheduled_seconds, actual_seconds, status_screen_seconds, stars_awarded)
+                    (completion_log_id, preset_task_id, sequence_order, completed_at, scheduled_seconds, actual_seconds, status_screen_seconds, stars_awarded, task_title, points_awarded)
                 VALUES
-                    (:log_id, :task_id, :sequence_order, :completed_at, :scheduled_seconds, :actual_seconds, :status_seconds, :stars_awarded)
+                    (:log_id, :task_id, :sequence_order, :completed_at, :scheduled_seconds, :actual_seconds, :status_seconds, :stars_awarded, :task_title, :points_awarded)
             ");
             foreach ($tasks as $task) {
                 $scheduledSeconds = null;
@@ -1643,15 +1641,18 @@ function logRoutineCompletionSession($routine_id, $child_id, $parent_id, $comple
                 if (array_key_exists('stars_awarded', $task)) {
                     $starsAwarded = (int) ($task['stars_awarded'] ?? 0);
                 }
+                $presetTaskId = (int) ($task['preset_task_id'] ?? $task['routine_task_id'] ?? 0);
                 $taskStmt->execute([
                     ':log_id' => $logId,
-                    ':task_id' => (int) ($task['routine_task_id'] ?? 0),
+                    ':task_id' => $presetTaskId > 0 ? $presetTaskId : null,
                     ':sequence_order' => (int) ($task['sequence_order'] ?? 0),
                     ':completed_at' => $task['completed_at'] ?: null,
                     ':scheduled_seconds' => $scheduledSeconds,
                     ':actual_seconds' => $actualSeconds,
                     ':status_seconds' => max(0, (int) ($task['status_screen_seconds'] ?? 0)),
-                    ':stars_awarded' => max(0, min(3, $starsAwarded))
+                    ':stars_awarded' => max(0, min(3, $starsAwarded)),
+                    ':task_title' => isset($task['task_title']) ? (string) $task['task_title'] : null,
+                    ':points_awarded' => array_key_exists('points_awarded', $task) ? (int) $task['points_awarded'] : null
                 ]);
             }
         }
@@ -1721,7 +1722,7 @@ function completeRoutineAsParent(int $routine_id, array $selected, array $comple
                 $awardedPoints += max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0));
             }
         }
-        setRoutineTaskStatus($routine_id, $taskId, $isSelected ? 'completed' : 'pending', $completedAtValue);
+        setRoutineStepStatus($routine_id, $taskId, $isSelected ? 'completed' : 'pending', $completedAtValue);
     }
     if ($awardedPoints > 0 && $childId > 0) {
         updateChildPoints($childId, $awardedPoints);
@@ -1750,13 +1751,15 @@ function completeRoutineAsParent(int $routine_id, array $selected, array $comple
                     continue;
                 }
                 $completionTasks[] = [
-                    'routine_task_id' => $taskId,
+                    'preset_task_id' => $taskId,
                     'sequence_order'  => (int) ($task['sequence_order'] ?? 0),
                     'completed_at'    => $completionTimestampMap[$taskId] ?? null,
                     'scheduled_seconds'    => null,
                     'actual_seconds'       => null,
                     'status_screen_seconds' => 0,
-                    'stars_awarded'        => 0
+                    'stars_awarded'        => 0,
+                    'task_title'           => $task['title'] ?? null,
+                    'points_awarded'       => empty($completedTodayMap[$taskId]) ? max(0, (int) ($task['point_value'] ?? $task['points'] ?? 0)) : 0
                 ];
             }
             logRoutineCompletionSession($routine_id, $childId, $parentIdForLog, 'parent', $parentStartedAt, $parentCompletedAt, $completionTasks);
@@ -3717,7 +3720,7 @@ function rejectGoal($goal_id, $parent_user_id, $rejection_comment, &$error = nul
 }
 
 // **[New] Routine Task Functions **
-function createRoutineTask($parent_user_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds = null, $minimum_enabled = 0, $icon_url = null, $audio_url = null, $creator_user_id = null) {
+function createPresetTask($parent_user_id, $title, $description, $time_limit, $point_value, $category, $minimum_seconds = null, $minimum_enabled = 0, $icon_url = null, $audio_url = null, $creator_user_id = null) {
     global $db;
     if ($minimum_seconds !== null) {
         $minimum_seconds = max(0, (int) $minimum_seconds);
@@ -3727,7 +3730,7 @@ function createRoutineTask($parent_user_id, $title, $description, $time_limit, $
         $minimum_seconds = null;
         $minimum_enabled = 0;
     }
-    $stmt = $db->prepare("INSERT INTO routine_tasks (parent_user_id, title, description, time_limit, point_value, category, minimum_seconds, minimum_enabled, icon_url, audio_url, created_by) VALUES (:parent_id, :title, :description, :time_limit, :point_value, :category, :minimum_seconds, :minimum_enabled, :icon_url, :audio_url, :created_by)");
+    $stmt = $db->prepare("INSERT INTO preset_tasks (parent_user_id, title, description, time_limit, point_value, category, minimum_seconds, minimum_enabled, icon_url, audio_url, created_by) VALUES (:parent_id, :title, :description, :time_limit, :point_value, :category, :minimum_seconds, :minimum_enabled, :icon_url, :audio_url, :created_by)");
     return $stmt->execute([
         ':parent_id' => $parent_user_id,
         ':title' => $title,
@@ -3743,22 +3746,22 @@ function createRoutineTask($parent_user_id, $title, $description, $time_limit, $
     ]);
 }
 
-function getRoutineTasks($parent_user_id) {
+function getPresetTasks($parent_user_id) {
     global $db;
     // Include global defaults (parent_id = 0) and parent-specific
-    $stmt = $db->prepare("SELECT * FROM routine_tasks WHERE parent_user_id = 0 OR parent_user_id = :parent_id");
+    $stmt = $db->prepare("SELECT * FROM preset_tasks WHERE parent_user_id = 0 OR parent_user_id = :parent_id");
     $stmt->execute([':parent_id' => $parent_user_id]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function getRoutineTasksByIds($parent_user_id, array $task_ids) {
+function getPresetTasksByIds($parent_user_id, array $task_ids) {
     global $db;
     if (empty($task_ids)) {
         return [];
     }
     $placeholders = implode(',', array_fill(0, count($task_ids), '?'));
-    $sql = "SELECT * FROM routine_tasks 
-            WHERE id IN ($placeholders) 
+    $sql = "SELECT * FROM preset_tasks
+            WHERE id IN ($placeholders)
               AND (parent_user_id = 0 OR parent_user_id = ?)";
     $params = array_map('intval', $task_ids);
     $params[] = $parent_user_id;
@@ -3802,23 +3805,57 @@ function calculateRoutineDurationMinutes($start_time, $end_time) {
     return (int) round($duration);
 }
 
-function replaceRoutineTasks($routine_id, array $tasks) {
+// Replaces a routine's steps. Each step row snapshots the preset's current
+// values at add time, so later preset edits do not change this routine.
+// Runs in a transaction: an interruption can no longer wipe a routine's steps.
+function replaceRoutineSteps($routine_id, array $steps) {
     global $db;
-    $stmt = $db->prepare("DELETE FROM routines_routine_tasks WHERE routine_id = :routine_id");
-    $stmt->execute([':routine_id' => $routine_id]);
-    foreach ($tasks as $task) {
-        $taskId = (int) ($task['id'] ?? 0);
-        if ($taskId <= 0) {
-            continue;
+    $presetIds = [];
+    foreach ($steps as $step) {
+        $id = (int) ($step['id'] ?? 0);
+        if ($id > 0) {
+            $presetIds[] = $id;
         }
-        $sequence = (int) ($task['sequence_order'] ?? 0);
-        if ($sequence <= 0) {
-            continue;
-        }
-        $dependencyId = $task['dependency_id'] !== null ? (int) $task['dependency_id'] : null;
-        addRoutineTaskToRoutine($routine_id, $taskId, $sequence, $dependencyId);
     }
-    return true;
+    $presetMap = [];
+    if (!empty($presetIds)) {
+        $placeholders = implode(',', array_fill(0, count($presetIds), '?'));
+        $stmt = $db->prepare("SELECT * FROM preset_tasks WHERE id IN ($placeholders)");
+        $stmt->execute($presetIds);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $presetMap[(int) $row['id']] = $row;
+        }
+    }
+    $ownTransaction = !$db->inTransaction();
+    if ($ownTransaction) {
+        $db->beginTransaction();
+    }
+    try {
+        $stmt = $db->prepare("DELETE FROM routine_preset_tasks WHERE routine_id = :routine_id");
+        $stmt->execute([':routine_id' => $routine_id]);
+        foreach ($steps as $step) {
+            $presetId = (int) ($step['id'] ?? 0);
+            if ($presetId <= 0 || !isset($presetMap[$presetId])) {
+                continue;
+            }
+            $sequence = (int) ($step['sequence_order'] ?? 0);
+            if ($sequence <= 0) {
+                continue;
+            }
+            $dependencyId = $step['dependency_id'] !== null ? (int) $step['dependency_id'] : null;
+            addStepToRoutine($routine_id, $presetId, $sequence, $dependencyId, 'pending', $presetMap[$presetId]);
+        }
+        if ($ownTransaction) {
+            $db->commit();
+        }
+        return true;
+    } catch (Exception $e) {
+        if ($ownTransaction) {
+            $db->rollBack();
+        }
+        error_log("Failed to replace steps for routine $routine_id: " . $e->getMessage());
+        return false;
+    }
 }
 
 function getRoutinePreferences($parent_user_id) {
@@ -3917,13 +3954,13 @@ function saveRoutinePreferences($parent_user_id, $timer_warnings_enabled, $sub_t
     return $result;
 }
 
-function logRoutineOvertime($routine_id, $routine_task_id, $child_user_id, $scheduled_seconds, $actual_seconds, $overtime_seconds) {
+function logRoutineOvertime($routine_id, $preset_task_id, $child_user_id, $scheduled_seconds, $actual_seconds, $overtime_seconds) {
     global $db;
-    $stmt = $db->prepare("INSERT INTO routine_overtime_logs (routine_id, routine_task_id, child_user_id, scheduled_seconds, actual_seconds, overtime_seconds)
+    $stmt = $db->prepare("INSERT INTO routine_overtime_logs (routine_id, preset_task_id, child_user_id, scheduled_seconds, actual_seconds, overtime_seconds)
                           VALUES (:routine_id, :task_id, :child_id, :scheduled, :actual, :overtime)");
     return $stmt->execute([
         ':routine_id' => $routine_id,
-        ':task_id' => $routine_task_id,
+        ':task_id' => $preset_task_id,
         ':child_id' => $child_user_id,
         ':scheduled' => (int) $scheduled_seconds,
         ':actual' => (int) $actual_seconds,
@@ -3931,22 +3968,38 @@ function logRoutineOvertime($routine_id, $routine_task_id, $child_user_id, $sche
     ]);
 }
 
-function updateRoutineTask($routine_task_id, $updates) {
+function updatePresetTask($preset_task_id, $updates) {
     global $db;
     $fields = [];
-    $params = [':id' => $routine_task_id];
+    $params = [':id' => $preset_task_id];
     foreach ($updates as $key => $value) {
         $fields[] = "$key = :$key";
         $params[":$key"] = $value;
     }
-    $stmt = $db->prepare("UPDATE routine_tasks SET " . implode(', ', $fields) . " WHERE id = :id");
+    $stmt = $db->prepare("UPDATE preset_tasks SET " . implode(', ', $fields) . " WHERE id = :id");
     return $stmt->execute($params);
 }
 
-function deleteRoutineTask($routine_task_id, $parent_user_id) {
+function deletePresetTask($preset_task_id, $parent_user_id) {
     global $db;
-    $stmt = $db->prepare("DELETE FROM routine_tasks WHERE id = :id AND parent_user_id = :parent_id");
-    return $stmt->execute([':id' => $routine_task_id, ':parent_id' => $parent_user_id]);
+    // Remove routine step rows first (the junction FK is RESTRICT); dependency
+    // references clear via fk_rps_dependency SET NULL, and history rows keep
+    // their snapshots via fk_rct_preset/fk_rol_preset SET NULL.
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare("DELETE rps FROM routine_preset_tasks rps
+                              JOIN preset_tasks pt ON pt.id = rps.preset_task_id
+                              WHERE rps.preset_task_id = :id AND pt.parent_user_id = :parent_id");
+        $stmt->execute([':id' => $preset_task_id, ':parent_id' => $parent_user_id]);
+        $stmt = $db->prepare("DELETE FROM preset_tasks WHERE id = :id AND parent_user_id = :parent_id");
+        $result = $stmt->execute([':id' => $preset_task_id, ':parent_id' => $parent_user_id]);
+        $db->commit();
+        return $result;
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log("Failed to delete preset task $preset_task_id: " . $e->getMessage());
+        return false;
+    }
 }
 
 
@@ -4115,7 +4168,7 @@ function adjustChildStars(int $child_id, int $delta, string $reason, int $create
         . ' Current level: ' . (int) ($levelState['level'] ?? 1) . '.';
 }
 
-// **[Revised] Routine Functions (now use routine_task_id instead of task_id) **
+// ** Routine Functions (steps reference preset_task_id) **
 function createRoutine($parent_user_id, $child_user_id, $title, $start_time, $end_time, $recurrence, $bonus_points, $time_of_day = 'anytime', $recurrence_days = null, $routine_date = null, $creator_user_id = null) {
     global $db;
     $stmt = $db->prepare("INSERT INTO routines (parent_user_id, child_user_id, title, start_time, end_time, recurrence, bonus_points, time_of_day, recurrence_days, routine_date, created_by) VALUES (:parent_id, :child_id, :title, :start_time, :end_time, :recurrence, :bonus_points, :time_of_day, :recurrence_days, :routine_date, :created_by)");
@@ -4159,29 +4212,45 @@ function deleteRoutine($routine_id, $parent_user_id) {
     return $stmt->execute([':id' => $routine_id, ':parent_id' => $parent_user_id]);
 }
 
-function addRoutineTaskToRoutine($routine_id, $routine_task_id, $sequence_order, $dependency_id = null, $status = 'pending') {
+// Adds a preset task as a routine step. $preset_row (when given) is the preset
+// record whose values are frozen into the step's snapshot columns.
+function addStepToRoutine($routine_id, $preset_task_id, $sequence_order, $dependency_id = null, $status = 'pending', ?array $preset_row = null) {
     global $db;
-    $stmt = $db->prepare("INSERT INTO routines_routine_tasks (routine_id, routine_task_id, sequence_order, dependency_id, status) VALUES (:routine_id, :routine_task_id, :sequence_order, :dependency_id, :status)");
+    $stmt = $db->prepare("INSERT INTO routine_preset_tasks
+        (routine_id, preset_task_id, sequence_order, dependency_id, status,
+         title, description, time_limit, point_value, minimum_seconds, minimum_enabled, category, icon_url, audio_url)
+        VALUES
+        (:routine_id, :preset_task_id, :sequence_order, :dependency_id, :status,
+         :title, :description, :time_limit, :point_value, :minimum_seconds, :minimum_enabled, :category, :icon_url, :audio_url)");
     return $stmt->execute([
         ':routine_id' => $routine_id,
-        ':routine_task_id' => $routine_task_id,
+        ':preset_task_id' => $preset_task_id,
         ':sequence_order' => $sequence_order,
         ':dependency_id' => $dependency_id,
-        ':status' => in_array($status, ['pending', 'completed'], true) ? $status : 'pending'
+        ':status' => in_array($status, ['pending', 'completed'], true) ? $status : 'pending',
+        ':title' => $preset_row['title'] ?? null,
+        ':description' => $preset_row['description'] ?? null,
+        ':time_limit' => isset($preset_row['time_limit']) ? (int) $preset_row['time_limit'] : null,
+        ':point_value' => isset($preset_row['point_value']) ? (int) $preset_row['point_value'] : null,
+        ':minimum_seconds' => isset($preset_row['minimum_seconds']) ? (int) $preset_row['minimum_seconds'] : null,
+        ':minimum_enabled' => isset($preset_row['minimum_enabled']) ? (int) $preset_row['minimum_enabled'] : null,
+        ':category' => $preset_row['category'] ?? null,
+        ':icon_url' => $preset_row['icon_url'] ?? null,
+        ':audio_url' => $preset_row['audio_url'] ?? null
     ]);
 }
 
-function removeRoutineTaskFromRoutine($routine_id, $routine_task_id) {
+function removeStepFromRoutine($routine_id, $preset_task_id) {
     global $db;
-    $stmt = $db->prepare("DELETE FROM routines_routine_tasks WHERE routine_id = :routine_id AND routine_task_id = :routine_task_id");
-    return $stmt->execute([':routine_id' => $routine_id, ':routine_task_id' => $routine_task_id]);
+    $stmt = $db->prepare("DELETE FROM routine_preset_tasks WHERE routine_id = :routine_id AND preset_task_id = :preset_task_id");
+    return $stmt->execute([':routine_id' => $routine_id, ':preset_task_id' => $preset_task_id]);
 }
 
-function reorderRoutineTasks($routine_id, $new_order) {  // $new_order = array(routine_task_id => order)
+function reorderRoutineSteps($routine_id, $new_order) {  // $new_order = array(preset_task_id => order)
     global $db;
-    foreach ($new_order as $routine_task_id => $order) {
-        $stmt = $db->prepare("UPDATE routines_routine_tasks SET sequence_order = :order WHERE routine_id = :routine_id AND routine_task_id = :routine_task_id");
-        $stmt->execute([':order' => $order, ':routine_id' => $routine_id, ':routine_task_id' => $routine_task_id]);
+    foreach ($new_order as $preset_task_id => $order) {
+        $stmt = $db->prepare("UPDATE routine_preset_tasks SET sequence_order = :order WHERE routine_id = :routine_id AND preset_task_id = :preset_task_id");
+        $stmt->execute([':order' => $order, ':routine_id' => $routine_id, ':preset_task_id' => $preset_task_id]);
     }
     return true;
 }
@@ -4243,18 +4312,47 @@ function getRoutines($user_id) {
     $routines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($routines as &$routine) {
-        $taskStmt = $db->prepare("SELECT rt.*, rrt.sequence_order, rrt.dependency_id, rrt.status AS routine_status, rrt.completed_at AS routine_completed_at FROM routine_tasks rt JOIN routines_routine_tasks rrt ON rt.id = rrt.routine_task_id WHERE rrt.routine_id = :routine_id ORDER BY rrt.sequence_order");
-        $taskStmt->execute([':routine_id' => $routine['id']]);
-        $tasks = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($tasks as &$task) {
-            $task['library_status'] = $task['status'] ?? null;
-            $task['status'] = $task['routine_status'] ?? 'pending';
-            $task['completed_at'] = $task['routine_completed_at'] ?? null;
-            unset($task['routine_status'], $task['routine_completed_at']);
-        }
-        $routine['tasks'] = $tasks;
+        $routine['tasks'] = getRoutineStepRows($routine['id']);
     }
     return $routines;
+}
+
+// Fetches a routine's steps. Values come from the step's add-time snapshot,
+// falling back to the live preset row for steps created before snapshots
+// existed. LEFT JOIN so steps still render if the preset row is ever gone.
+function getRoutineStepRows($routine_id) {
+    global $db;
+    $taskStmt = $db->prepare("SELECT
+            rps.preset_task_id AS id,
+            COALESCE(rps.title, pt.title) AS title,
+            COALESCE(rps.description, pt.description) AS description,
+            COALESCE(rps.time_limit, pt.time_limit) AS time_limit,
+            COALESCE(rps.point_value, pt.point_value) AS point_value,
+            COALESCE(rps.minimum_seconds, pt.minimum_seconds) AS minimum_seconds,
+            COALESCE(rps.minimum_enabled, pt.minimum_enabled) AS minimum_enabled,
+            COALESCE(rps.category, pt.category) AS category,
+            COALESCE(rps.icon_url, pt.icon_url) AS icon_url,
+            COALESCE(rps.audio_url, pt.audio_url) AS audio_url,
+            pt.parent_user_id AS parent_user_id,
+            pt.created_by AS created_by,
+            pt.created_at AS created_at,
+            pt.is_active AS preset_is_active,
+            rps.sequence_order,
+            rps.dependency_id,
+            rps.status AS routine_status,
+            rps.completed_at AS routine_completed_at
+        FROM routine_preset_tasks rps
+        LEFT JOIN preset_tasks pt ON pt.id = rps.preset_task_id
+        WHERE rps.routine_id = :routine_id
+        ORDER BY rps.sequence_order");
+    $taskStmt->execute([':routine_id' => $routine_id]);
+    $tasks = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($tasks as &$task) {
+        $task['status'] = $task['routine_status'] ?? 'pending';
+        $task['completed_at'] = $task['routine_completed_at'] ?? null;
+        unset($task['routine_status'], $task['routine_completed_at']);
+    }
+    return $tasks;
 }
 
 function getRoutineWithTasks($routine_id) {
@@ -4263,16 +4361,7 @@ function getRoutineWithTasks($routine_id) {
     $stmt->execute([':id' => $routine_id]);
     $routine = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($routine) {
-        $taskStmt = $db->prepare("SELECT rt.*, rrt.sequence_order, rrt.dependency_id, rrt.status AS routine_status, rrt.completed_at AS routine_completed_at FROM routine_tasks rt JOIN routines_routine_tasks rrt ON rt.id = rrt.routine_task_id WHERE rrt.routine_id = :routine_id ORDER BY rrt.sequence_order");
-        $taskStmt->execute([':routine_id' => $routine_id]);
-        $tasks = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($tasks as &$task) {
-            $task['library_status'] = $task['status'] ?? null;
-            $task['status'] = $task['routine_status'] ?? 'pending';
-            $task['completed_at'] = $task['routine_completed_at'] ?? null;
-            unset($task['routine_status'], $task['routine_completed_at']);
-        }
-        $routine['tasks'] = $tasks;
+        $routine['tasks'] = getRoutineStepRows($routine_id);
     }
     return $routine;
 }
@@ -4310,13 +4399,13 @@ function completeRoutine($routine_id, $child_id, $grant_bonus = true) {
     }
 }
 
-function resetRoutineTaskStatuses($routine_id) {
+function resetRoutineStepStatuses($routine_id) {
     global $db;
-    $stmt = $db->prepare("UPDATE routines_routine_tasks SET status = 'pending', completed_at = NULL WHERE routine_id = :routine_id");
+    $stmt = $db->prepare("UPDATE routine_preset_tasks SET status = 'pending', completed_at = NULL WHERE routine_id = :routine_id");
     return $stmt->execute([':routine_id' => $routine_id]);
 }
 
-function setRoutineTaskStatus($routine_id, $routine_task_id, $status, $completed_at = null) {
+function setRoutineStepStatus($routine_id, $preset_task_id, $status, $completed_at = null) {
     global $db;
     $allowed = ['pending', 'completed'];
     if (!in_array($status, $allowed, true)) {
@@ -4332,11 +4421,11 @@ function setRoutineTaskStatus($routine_id, $routine_task_id, $status, $completed
     }
     $params = [
         ':routine_id' => $routine_id,
-        ':routine_task_id' => $routine_task_id,
+        ':preset_task_id' => $preset_task_id,
         ':status' => $status,
         ':completed_at' => $resolvedCompletedAt
     ];
-    $stmt = $db->prepare("UPDATE routines_routine_tasks SET status = :status, completed_at = :completed_at WHERE routine_id = :routine_id AND routine_task_id = :routine_task_id");
+    $stmt = $db->prepare("UPDATE routine_preset_tasks SET status = :status, completed_at = :completed_at WHERE routine_id = :routine_id AND preset_task_id = :preset_task_id");
     if (!$stmt->execute($params)) {
         return false;
     }
@@ -4347,17 +4436,17 @@ function getRoutineOvertimeLogs($parent_user_id, $limit = 25) {
     global $db;
     $limit = max(1, (int) $limit);
     $sql = "
-        SELECT 
+        SELECT
             rol.id,
             rol.routine_id,
-            rol.routine_task_id,
+            rol.preset_task_id,
             rol.child_user_id,
             rol.scheduled_seconds,
             rol.actual_seconds,
             rol.overtime_seconds,
             rol.occurred_at,
             r.title AS routine_title,
-            rt.title AS task_title,
+            COALESCE(rps.title, pt.title, 'Removed task') AS task_title,
             COALESCE(
                 NULLIF(TRIM(CONCAT(COALESCE(cu.first_name, ''), ' ', COALESCE(cu.last_name, ''))), ''),
                 NULLIF(cu.name, ''),
@@ -4366,7 +4455,8 @@ function getRoutineOvertimeLogs($parent_user_id, $limit = 25) {
             ) AS child_display_name
         FROM routine_overtime_logs rol
         JOIN routines r ON rol.routine_id = r.id
-        JOIN routine_tasks rt ON rol.routine_task_id = rt.id
+        LEFT JOIN preset_tasks pt ON rol.preset_task_id = pt.id
+        LEFT JOIN routine_preset_tasks rps ON rps.routine_id = rol.routine_id AND rps.preset_task_id = rol.preset_task_id
         JOIN users cu ON rol.child_user_id = cu.id
         WHERE r.parent_user_id = :parent_id
         ORDER BY rol.occurred_at DESC
@@ -4432,8 +4522,186 @@ function getRoutineOvertimeStats($parent_user_id) {
 //     session_start();
 // }
 
+// ---------------------------------------------------------------------------
+// Preset Tasks schema migration (v1)
+// Renames the legacy Routine Task Library tables to the global Preset Tasks
+// naming, adds snapshot/archive columns, and backfills snapshots from the
+// current live values so behavior is unchanged at cutover.
+// Every DDL step is individually guarded so an interrupted migration simply
+// resumes on the next run; the marker row is written last.
+// ---------------------------------------------------------------------------
+
+function dbTableExists(PDO $db, string $table): bool {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t");
+    $stmt->execute([':t' => $table]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function dbColumnExists(PDO $db, string $table, string $column): bool {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c");
+    $stmt->execute([':t' => $table, ':c' => $column]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function dbForeignKeyExists(PDO $db, string $table, string $fkName): bool {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = :t AND CONSTRAINT_NAME = :n AND CONSTRAINT_TYPE = 'FOREIGN KEY'");
+    $stmt->execute([':t' => $table, ':n' => $fkName]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+// Drop every FK on $table.$column that references $referencedTable, except the
+// (deterministically named) constraints listed in $keepNames. Legacy installs
+// have auto-generated FK names, so they must be discovered, not assumed.
+function dbDropForeignKeysOnColumn(PDO $db, string $table, string $column, string $referencedTable, array $keepNames = []): void {
+    $stmt = $db->prepare("SELECT DISTINCT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c AND REFERENCED_TABLE_NAME = :rt");
+    $stmt->execute([':t' => $table, ':c' => $column, ':rt' => $referencedTable]);
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $fkName) {
+        if (in_array($fkName, $keepNames, true)) {
+            continue;
+        }
+        $db->exec("ALTER TABLE `$table` DROP FOREIGN KEY `$fkName`");
+    }
+}
+
+function migratePresetTasksSchema(PDO $db): void {
+    // Fast path: single indexed lookup once the migration has been applied.
+    try {
+        $done = $db->query("SELECT 1 FROM schema_migrations WHERE name = 'preset_tasks_v1' LIMIT 1")->fetchColumn();
+        if ($done) {
+            return;
+        }
+    } catch (PDOException $e) {
+        // schema_migrations does not exist yet -> not migrated.
+    }
+
+    $db->exec("CREATE TABLE IF NOT EXISTS schema_migrations (
+        name VARCHAR(64) PRIMARY KEY,
+        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+
+    $legacyLib = dbTableExists($db, 'routine_tasks');
+    $newLib = dbTableExists($db, 'preset_tasks');
+    if (!$legacyLib && !$newLib) {
+        // Fresh install: the bootstrap below creates the new-name tables directly.
+        $db->exec("INSERT IGNORE INTO schema_migrations (name) VALUES ('preset_tasks_v1')");
+        return;
+    }
+
+    // 1. Table renames (InnoDB rewrites referencing FK definitions automatically).
+    if ($legacyLib && !$newLib) {
+        $db->exec("RENAME TABLE routine_tasks TO preset_tasks");
+    }
+    if (dbTableExists($db, 'routines_routine_tasks') && !dbTableExists($db, 'routine_preset_tasks')) {
+        $db->exec("RENAME TABLE routines_routine_tasks TO routine_preset_tasks");
+    }
+
+    // 2. Columns that older code wrote but never declared (hand-added on live DBs).
+    $db->exec("ALTER TABLE preset_tasks ADD COLUMN IF NOT EXISTS minimum_seconds INT NULL");
+    $db->exec("ALTER TABLE preset_tasks ADD COLUMN IF NOT EXISTS minimum_enabled TINYINT(1) NOT NULL DEFAULT 0");
+
+    // 3. New preset columns: archive state and default time-of-day.
+    $db->exec("ALTER TABLE preset_tasks ADD COLUMN IF NOT EXISTS default_time_of_day ENUM('anytime','morning','afternoon','evening') NOT NULL DEFAULT 'anytime'");
+    $db->exec("ALTER TABLE preset_tasks ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1");
+    $db->exec("ALTER TABLE preset_tasks ADD COLUMN IF NOT EXISTS archived_at DATETIME NULL");
+
+    // 4. Junction: rename FK column, re-add deterministic FKs (RESTRICT so an
+    //    in-use preset can never be hard-deleted out from under a routine).
+    if (dbTableExists($db, 'routine_preset_tasks')) {
+        if (dbColumnExists($db, 'routine_preset_tasks', 'routine_task_id')) {
+            dbDropForeignKeysOnColumn($db, 'routine_preset_tasks', 'routine_task_id', 'preset_tasks');
+            $db->exec("ALTER TABLE routine_preset_tasks CHANGE COLUMN routine_task_id preset_task_id INT NOT NULL");
+        }
+        if (!dbForeignKeyExists($db, 'routine_preset_tasks', 'fk_rps_preset')) {
+            dbDropForeignKeysOnColumn($db, 'routine_preset_tasks', 'preset_task_id', 'preset_tasks', ['fk_rps_dependency']);
+            $db->exec("ALTER TABLE routine_preset_tasks ADD CONSTRAINT fk_rps_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE RESTRICT");
+        }
+        if (!dbForeignKeyExists($db, 'routine_preset_tasks', 'fk_rps_dependency')) {
+            dbDropForeignKeysOnColumn($db, 'routine_preset_tasks', 'dependency_id', 'preset_tasks', ['fk_rps_preset']);
+            $db->exec("ALTER TABLE routine_preset_tasks ADD CONSTRAINT fk_rps_dependency FOREIGN KEY (dependency_id) REFERENCES preset_tasks(id) ON DELETE SET NULL");
+        }
+        // Add-time snapshot columns: frozen copies of the preset values so a
+        // later preset edit cannot silently change an existing routine.
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS title VARCHAR(100) NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS description TEXT NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS time_limit INT NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS point_value INT NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS minimum_seconds INT NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS minimum_enabled TINYINT(1) NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS category ENUM('hygiene','homework','household') NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS icon_url VARCHAR(255) NULL");
+        $db->exec("ALTER TABLE routine_preset_tasks ADD COLUMN IF NOT EXISTS audio_url VARCHAR(255) NULL");
+    }
+
+    // 5. History tables: rename FK column and make it nullable with SET NULL so
+    //    completion history and overtime reports survive a preset hard delete.
+    if (dbTableExists($db, 'routine_completion_tasks')) {
+        if (dbColumnExists($db, 'routine_completion_tasks', 'routine_task_id')) {
+            dbDropForeignKeysOnColumn($db, 'routine_completion_tasks', 'routine_task_id', 'preset_tasks');
+            $db->exec("ALTER TABLE routine_completion_tasks CHANGE COLUMN routine_task_id preset_task_id INT NULL");
+        }
+        if (!dbForeignKeyExists($db, 'routine_completion_tasks', 'fk_rct_preset')) {
+            dbDropForeignKeysOnColumn($db, 'routine_completion_tasks', 'preset_task_id', 'preset_tasks');
+            $db->exec("ALTER TABLE routine_completion_tasks ADD CONSTRAINT fk_rct_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE SET NULL");
+        }
+        $db->exec("ALTER TABLE routine_completion_tasks ADD COLUMN IF NOT EXISTS task_title VARCHAR(100) NULL");
+        $db->exec("ALTER TABLE routine_completion_tasks ADD COLUMN IF NOT EXISTS points_awarded INT NULL");
+    }
+    if (dbTableExists($db, 'routine_overtime_logs')) {
+        if (dbColumnExists($db, 'routine_overtime_logs', 'routine_task_id')) {
+            dbDropForeignKeysOnColumn($db, 'routine_overtime_logs', 'routine_task_id', 'preset_tasks');
+            $db->exec("ALTER TABLE routine_overtime_logs CHANGE COLUMN routine_task_id preset_task_id INT NULL");
+        }
+        if (!dbForeignKeyExists($db, 'routine_overtime_logs', 'fk_rol_preset')) {
+            dbDropForeignKeysOnColumn($db, 'routine_overtime_logs', 'preset_task_id', 'preset_tasks');
+            $db->exec("ALTER TABLE routine_overtime_logs ADD CONSTRAINT fk_rol_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE SET NULL");
+        }
+    }
+
+    // 6. Individual tasks can now be created from a preset.
+    if (dbTableExists($db, 'tasks')) {
+        $db->exec("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS preset_task_id INT NULL");
+        if (!dbForeignKeyExists($db, 'tasks', 'fk_tasks_preset')) {
+            $db->exec("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE SET NULL");
+        }
+    }
+
+    // 7. Backfill snapshots from current live values (transactional, idempotent).
+    //    Because the snapshots equal today's live values, rendered output is
+    //    byte-identical before and after the migration.
+    $db->beginTransaction();
+    try {
+        if (dbTableExists($db, 'routine_preset_tasks')) {
+            $db->exec("UPDATE routine_preset_tasks rps JOIN preset_tasks pt ON pt.id = rps.preset_task_id
+                SET rps.title = pt.title,
+                    rps.description = pt.description,
+                    rps.time_limit = pt.time_limit,
+                    rps.point_value = pt.point_value,
+                    rps.minimum_seconds = pt.minimum_seconds,
+                    rps.minimum_enabled = pt.minimum_enabled,
+                    rps.category = pt.category,
+                    rps.icon_url = pt.icon_url,
+                    rps.audio_url = pt.audio_url
+                WHERE rps.title IS NULL");
+        }
+        if (dbTableExists($db, 'routine_completion_tasks')) {
+            $db->exec("UPDATE routine_completion_tasks rct JOIN preset_tasks pt ON pt.id = rct.preset_task_id
+                SET rct.task_title = pt.title
+                WHERE rct.task_title IS NULL");
+        }
+        $db->exec("INSERT IGNORE INTO schema_migrations (name) VALUES ('preset_tasks_v1')");
+        $db->commit();
+    } catch (Exception $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    error_log("Preset Tasks schema migration (preset_tasks_v1) applied");
+}
+
 // Ensure all dependent tables are created in correct order with error handling
 try {
+    migratePresetTasksSchema($db);
+
     // Create users table if not exists (added is_secondary for secondary parents)
     $sql = "CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -4758,8 +5026,8 @@ try {
    $db->exec("ALTER TABLE routines ADD COLUMN IF NOT EXISTS routine_date DATE NULL");
    error_log("Added/verified routine_date in routines");
 
-    // Create routine_tasks table if not exists
-    $sql = "CREATE TABLE IF NOT EXISTS routine_tasks (
+    // Create preset_tasks table if not exists (the global Preset Task library)
+    $sql = "CREATE TABLE IF NOT EXISTS preset_tasks (
         id INT AUTO_INCREMENT PRIMARY KEY,
         parent_user_id INT NOT NULL,
         title VARCHAR(100) NOT NULL,
@@ -4767,54 +5035,54 @@ try {
         time_limit INT,
         point_value INT,
         category ENUM('hygiene', 'homework', 'household') DEFAULT 'household',
+        minimum_seconds INT NULL,
+        minimum_enabled TINYINT(1) NOT NULL DEFAULT 0,
+        default_time_of_day ENUM('anytime','morning','afternoon','evening') NOT NULL DEFAULT 'anytime',
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        archived_at DATETIME NULL,
         icon_url VARCHAR(255),
         audio_url VARCHAR(255),
         created_by INT NULL,
         status ENUM('pending', 'completed', 'approved') DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (parent_user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        CONSTRAINT fk_preset_tasks_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
     )";
     $db->exec($sql);
-    error_log("Created/verified routine_tasks table successfully");
+    error_log("Created/verified preset_tasks table successfully");
 
-    try {
-        $db->exec("ALTER TABLE routine_tasks ADD COLUMN IF NOT EXISTS created_by INT NULL");
-    } catch (PDOException $e) {
-        error_log("routine_tasks.created_by add column skipped: " . $e->getMessage());
-    }
-    try {
-        $db->exec("ALTER TABLE routine_tasks ADD CONSTRAINT fk_routine_tasks_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL");
-    } catch (PDOException $e) {
-        error_log("routine_tasks.created_by constraint ensure skipped: " . $e->getMessage());
+    // Individual tasks can be created from a preset (FK added after preset_tasks exists)
+    $db->exec("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS preset_task_id INT NULL");
+    if (!dbForeignKeyExists($db, 'tasks', 'fk_tasks_preset')) {
+        $db->exec("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE SET NULL");
     }
 
-    // Create routines_routine_tasks association table if not exists
-    $sql = "CREATE TABLE IF NOT EXISTS routines_routine_tasks (
+    // Create routine_preset_tasks association table if not exists.
+    // The title/description/time_limit/point_value/... columns are add-time
+    // snapshots of the preset so later preset edits do not change the routine.
+    $sql = "CREATE TABLE IF NOT EXISTS routine_preset_tasks (
         routine_id INT NOT NULL,
-        routine_task_id INT NOT NULL,
+        preset_task_id INT NOT NULL,
         sequence_order INT NOT NULL,
         dependency_id INT DEFAULT NULL,
         status ENUM('pending', 'completed') DEFAULT 'pending',
         completed_at DATETIME DEFAULT NULL,
-        PRIMARY KEY (routine_id, routine_task_id),
+        title VARCHAR(100) NULL,
+        description TEXT NULL,
+        time_limit INT NULL,
+        point_value INT NULL,
+        minimum_seconds INT NULL,
+        minimum_enabled TINYINT(1) NULL,
+        category ENUM('hygiene','homework','household') NULL,
+        icon_url VARCHAR(255) NULL,
+        audio_url VARCHAR(255) NULL,
+        PRIMARY KEY (routine_id, preset_task_id),
         FOREIGN KEY (routine_id) REFERENCES routines(id) ON DELETE CASCADE,
-        FOREIGN KEY (routine_task_id) REFERENCES routine_tasks(id) ON DELETE CASCADE,
-        FOREIGN KEY (dependency_id) REFERENCES routine_tasks(id) ON DELETE SET NULL
+        CONSTRAINT fk_rps_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE RESTRICT,
+        CONSTRAINT fk_rps_dependency FOREIGN KEY (dependency_id) REFERENCES preset_tasks(id) ON DELETE SET NULL
     )";
     $db->exec($sql);
-    error_log("Created/verified routines_routine_tasks table successfully");
-
-    try {
-        $db->exec("ALTER TABLE routines_routine_tasks ADD COLUMN IF NOT EXISTS status ENUM('pending','completed') DEFAULT 'pending'");
-    } catch (PDOException $e) {
-        error_log("routines_routine_tasks.status ensure skipped: " . $e->getMessage());
-    }
-    try {
-        $db->exec("ALTER TABLE routines_routine_tasks ADD COLUMN IF NOT EXISTS completed_at DATETIME DEFAULT NULL");
-    } catch (PDOException $e) {
-        error_log("routines_routine_tasks.completed_at ensure skipped: " . $e->getMessage());
-    }
+    error_log("Created/verified routine_preset_tasks table successfully");
 
     // Create routine_preferences table if not exists (family-level routine settings)
     $sql = "CREATE TABLE IF NOT EXISTS routine_preferences (
@@ -4851,17 +5119,19 @@ try {
     }
 
     // Create routine_overtime_logs table if not exists
+    // preset_task_id is nullable with SET NULL so overtime history survives a
+    // preset hard delete.
     $sql = "CREATE TABLE IF NOT EXISTS routine_overtime_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
         routine_id INT NOT NULL,
-        routine_task_id INT NOT NULL,
+        preset_task_id INT NULL,
         child_user_id INT NOT NULL,
         scheduled_seconds INT NOT NULL,
         actual_seconds INT NOT NULL,
         overtime_seconds INT NOT NULL,
         occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (routine_id) REFERENCES routines(id) ON DELETE CASCADE,
-        FOREIGN KEY (routine_task_id) REFERENCES routine_tasks(id) ON DELETE CASCADE,
+        CONSTRAINT fk_rol_preset FOREIGN KEY (preset_task_id) REFERENCES preset_tasks(id) ON DELETE SET NULL,
         FOREIGN KEY (child_user_id) REFERENCES users(id) ON DELETE CASCADE
     )";
     $db->exec($sql);

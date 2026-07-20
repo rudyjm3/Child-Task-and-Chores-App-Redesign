@@ -16,6 +16,17 @@ const T_DB_USER = 'root';
 const T_DB_PASS = '';
 const T_DB_NAME = 'child_chore_app';
 
+// Match the app timezone (includes/db_connect.php) BEFORE any date()/NOW()
+// usage, and pin every test connection's session time_zone to it. Otherwise
+// NOW()-relative fixture rows are written in server time (UTC) while the app
+// computes dates in America/New_York, and tests fail near midnight UTC.
+date_default_timezone_set('America/New_York');
+
+function t_apply_session_tz(PDO $pdo): PDO {
+    $pdo->exec("SET time_zone = '" . date('P') . "'");
+    return $pdo;
+}
+
 $GLOBALS['__t_pass'] = 0;
 $GLOBALS['__t_fail'] = 0;
 
@@ -24,6 +35,7 @@ function t_server_pdo(): PDO {
     if ($pdo === null) {
         $pdo = new PDO('mysql:host=' . T_DB_HOST, T_DB_USER, T_DB_PASS);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        t_apply_session_tz($pdo);
     }
     return $pdo;
 }
@@ -45,6 +57,7 @@ function t_load_sql(string $relPath): void {
     $sql = file_get_contents($path);
     $pdo = new PDO('mysql:host=' . T_DB_HOST . ';dbname=' . T_DB_NAME, T_DB_USER, T_DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    t_apply_session_tz($pdo);
     $pdo->exec($sql);
 }
 
@@ -66,6 +79,7 @@ function t_db(): PDO {
     if ($pdo === null) {
         $pdo = new PDO('mysql:host=' . T_DB_HOST . ';dbname=' . T_DB_NAME, T_DB_USER, T_DB_PASS);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        t_apply_session_tz($pdo);
     }
     return $pdo;
 }
