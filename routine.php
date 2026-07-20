@@ -1385,6 +1385,8 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'child') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Management</title>
     <link rel="stylesheet" href="css/main.css?v=3.27.0">
+    <script src="js/time-of-day.js?v=3.27.0"></script>
+    <script src="js/preset-picker.js?v=3.27.0"></script>
     <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
     <link rel="stylesheet" href="css/child.css?v=3.27.0">
     <?php else: ?>
@@ -1466,8 +1468,10 @@ margin-bottom: 20px;}
         .button.danger { background: #e53935; }
         .button.linkish { background: transparent; color: #1565c0; border: none; padding: 0; }
         .routine-builder { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-top: 16px; background: #fafafa; }
-        .builder-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
-        .builder-controls select { min-width: 240px; }
+        .builder-controls { display: flex; flex-direction: column; gap: 8px; }
+        .builder-controls-label { font-weight: 600; color: #37474f; font-size: 0.9rem; }
+        .builder-controls-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+        .builder-controls-buttons .button { display: inline-flex; align-items: center; gap: 8px; }
         .selected-task-list { list-style: none; margin: 18px 0 0; padding: 0; }
         .selected-task-item { background: #fff; border: 1px solid #dcdcdc; border-radius: 8px; padding: 12px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin-bottom: 10px; }
         .selected-task-item.error { border-color: #f44336; }
@@ -2247,17 +2251,15 @@ margin-bottom: 20px;}
                                 </div>
                                 <div class="routine-builder" data-builder-id="create" data-start-input="#start_time" data-end-input="#end_time">
                                     <div class="builder-controls">
-                                        <div class="form-group">
-                                            <label for="create-task-picker">Add Preset Task</label>
-                                            <select id="create-task-picker" data-role="task-picker">
-                                                <option value="">Select a preset task...</option>
-                                                <?php foreach ($preset_tasks as $task): ?>
-                                                    <?php if (isset($task['is_active']) && (int) $task['is_active'] === 0) continue; ?>
-                                                    <option value="<?php echo (int) $task['id']; ?>"><?php echo htmlspecialchars($task['title']); ?> (<?php echo (int) $task['time_limit']; ?> min)</option>
-                                                <?php endforeach; ?>
-                                            </select>
+                                        <span class="builder-controls-label">Add tasks to this routine</span>
+                                        <div class="builder-controls-buttons">
+                                            <button type="button" class="button secondary" data-role="pick-preset">
+                                                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pick a Preset Task
+                                            </button>
+                                            <button type="button" class="button secondary" data-role="create-custom-task">
+                                                <i class="fa-solid fa-plus" aria-hidden="true"></i> Create Custom Task
+                                            </button>
                                         </div>
-                                        <button type="button" class="button secondary" data-role="add-task">Add Task</button>
                                     </div>
                                     <ul class="selected-task-list" data-role="selected-list"></ul>
                                     <div class="summary-row">
@@ -2966,17 +2968,15 @@ margin-bottom: 20px;}
                                                 </div>
                                                 <div class="routine-builder" data-builder-id="edit-<?php echo (int) $routine['id']; ?>" data-start-input="input[name='start_time']" data-end-input="input[name='end_time']">
                                                     <div class="builder-controls">
-                                                        <div class="form-group">
-                                                            <label>Add Preset Task</label>
-                                                            <select data-role="task-picker">
-                                                                <option value="">Select a preset task...</option>
-                                                                <?php foreach ($preset_tasks as $task): ?>
-                                                                    <?php if (isset($task['is_active']) && (int) $task['is_active'] === 0) continue; ?>
-                                                                    <option value="<?php echo (int) $task['id']; ?>"><?php echo htmlspecialchars($task['title']); ?> (<?php echo (int) $task['time_limit']; ?> min)</option>
-                                                                <?php endforeach; ?>
-                                                            </select>
+                                                        <span class="builder-controls-label">Add tasks to this routine</span>
+                                                        <div class="builder-controls-buttons">
+                                                            <button type="button" class="button secondary" data-role="pick-preset">
+                                                                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pick a Preset Task
+                                                            </button>
+                                                            <button type="button" class="button secondary" data-role="create-custom-task">
+                                                                <i class="fa-solid fa-plus" aria-hidden="true"></i> Create Custom Task
+                                                            </button>
                                                         </div>
-                                                        <button type="button" class="button secondary" data-role="add-task">Add Task</button>
                                                     </div>
                                                     <ul class="selected-task-list" data-role="selected-list"></ul>
                                                     <div class="summary-row">
@@ -3551,6 +3551,9 @@ margin-bottom: 20px;}
                     this.listEl = container.querySelector('[data-role="selected-list"]');
                     this.taskPicker = container.querySelector('[data-role="task-picker"]');
                     this.addButton = container.querySelector('[data-role="add-task"]');
+                    this.pickPresetButton = container.querySelector('[data-role="pick-preset"]');
+                    this.createCustomButton = container.querySelector('[data-role="create-custom-task"]');
+                    this.presetPicker = null;
                     this.structureInput = container.querySelector('[data-role="structure-input"]');
                     this.totalMinutesEl = container.querySelector('[data-role="total-minutes"]');
                     this.durationEl = container.querySelector('[data-role="duration-minutes"]');
@@ -3584,6 +3587,40 @@ margin-bottom: 20px;}
                             if (this.selectedTasks.some(task => task.id === numeric)) return;
                             this.selectedTasks.push({ id: numeric });
                             this.render();
+                        });
+                    }
+
+                    if (this.pickPresetButton && window.PresetPicker) {
+                        this.pickPresetButton.addEventListener('click', () => {
+                            if (!this.presetPicker) {
+                                this.presetPicker = window.PresetPicker.create({
+                                    onSelect: (preset) => this.addPreset(preset),
+                                    getDisabledIds: () => this.selectedTasks.map(task => task.id),
+                                    disabledNote: 'In this routine'
+                                });
+                            }
+                            this.presetPicker.open();
+                        });
+                    }
+
+                    if (this.createCustomButton) {
+                        // Opens the Preset Tasks screen with the create form
+                        // (custom tasks in routines are saved as reusable presets).
+                        this.createCustomButton.addEventListener('click', () => {
+                            const libraryModalEl = document.querySelector('[data-routine-library-modal]');
+                            const presetCreateOverlay = document.querySelector('[data-role="task-modal"]');
+                            if (libraryModalEl) {
+                                libraryModalEl.classList.add('open');
+                                document.body.classList.add('modal-open');
+                            }
+                            if (presetCreateOverlay) {
+                                presetCreateOverlay.classList.add('active');
+                                presetCreateOverlay.setAttribute('aria-hidden', 'false');
+                                const firstField = presetCreateOverlay.querySelector('input, textarea, select');
+                                if (firstField) {
+                                    firstField.focus();
+                                }
+                            }
                         });
                     }
 
@@ -3668,6 +3705,19 @@ margin-bottom: 20px;}
 
                     this.syncStructureInput();
                     this.updateSummary();
+                }
+
+                // Adds a preset chosen from the shared picker. The picker
+                // disables ids already in this routine, but guard again here.
+                addPreset(preset) {
+                    const numeric = parseInt(preset && preset.id, 10);
+                    if (!Number.isFinite(numeric) || numeric <= 0) return;
+                    if (this.selectedTasks.some(task => task.id === numeric)) return;
+                    if (!taskLookup.has(String(numeric))) {
+                        taskLookup.set(String(numeric), preset);
+                    }
+                    this.selectedTasks.push({ id: numeric });
+                    this.render();
                 }
 
                 syncStructureInput() {
