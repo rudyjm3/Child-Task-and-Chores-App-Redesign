@@ -286,7 +286,7 @@ function renderStreakCheckSvg($suffix) {
     <title>Child Dashboard</title>
    <link rel="stylesheet" href="css/main.css?v=3.27.0">
    <script src="js/time-of-day.js?v=3.27.0"></script>
-    <link rel="stylesheet" href="css/child.css?v=3.27.0">
+    <link rel="stylesheet" href="css/child.css?v=3.28.1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         /* ── Page layout ── */
@@ -755,6 +755,9 @@ function renderStreakCheckSvg($suffix) {
     </script>
 </head>
 <body class="child-theme role-child">
+    <div class="child-page">
+    <?php include __DIR__ . '/includes/sidebar.php'; ?>
+    <div class="child-main">
     <?php
         $dashboardActive = $currentPage === 'dashboard_child.php';
         $routinesActive = $currentPage === 'routine.php';
@@ -1674,6 +1677,8 @@ foreach ($taskCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
       <div class="streak-celebration-message" data-streak-celebration-message>Awesome job!</div>
    </div>
 </div>
+   </div><!-- /.child-main -->
+   </div><!-- /.child-page -->
   <script src="js/number-stepper.js" defer></script>
   <script>
       (function () {

@@ -2354,6 +2354,9 @@ function renderStreakCheckSvg($suffix) {
     </script>
 </head>
 <body class="role-parent">
+   <div class="parent-page">
+   <?php include __DIR__ . '/includes/sidebar.php'; ?>
+   <div class="parent-main">
    <?php
       $dashboardActive = $currentPage === 'dashboard_parent.php';
       $routinesActive = $currentPage === 'routine.php';
@@ -3408,6 +3411,8 @@ function renderStreakCheckSvg($suffix) {
         <div class="streak-celebration-message" data-streak-celebration-message>Awesome job!</div>
     </div>
 </div>
+    </div><!-- /.parent-main -->
+    </div><!-- /.parent-page -->
   <script src="js/number-stepper.js" defer></script>
   <script>
       (function () {
