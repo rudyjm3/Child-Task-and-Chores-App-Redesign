@@ -1564,6 +1564,7 @@ function buildChildWeekSchedule(int $childId, DateTime $weekStart, DateTime $wee
             $completedStamp = null;
             if (empty($repeat)) {
                 $completedFlag = in_array(($row['status'] ?? ''), ['completed', 'approved'], true);
+                $rejectedFlag = ($row['status'] ?? '') === 'rejected';
                 $completedStamp = $row['completed_at'] ?? $row['approved_at'] ?? null;
             } elseif ($instanceStatus) {
                 $completedFlag = in_array($instanceStatus, ['completed', 'approved'], true);
