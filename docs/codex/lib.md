@@ -1,6 +1,6 @@
 # Shared Library Reference — `includes/functions.php`
 
-Single shared library for the whole app (~5400 lines, 144 top-level functions, no namespaces/classes). Included via `require_once __DIR__ . '/includes/functions.php'` at the top of every controller. Also transitively includes `includes/db_connect.php` and runs the full DB schema bootstrap/migration on every request (see bottom of file, and `docs/codex/schema.md`). No autoloader, no Composer — everything is one flat global-function namespace.
+Single shared library for the whole app (~5400 lines, 144 top-level functions, no namespaces/classes). Included via `require_once __DIR__ . '/includes/functions.php'` at the top of every controller. Also transitively includes `includes/db_connect.php` and, on every request, eagerly bootstraps/migrates the "core" ~18 tables (see bottom of file). A further ~9 tables are created lazily by scattered `ensure*Table()` helpers, only when the feature function that owns them is actually called — see the "Schema is not all created by one eager pass" note at the top of `docs/codex/schema.md` before assuming a table exists. No autoloader, no Composer — everything is one flat global-function namespace.
 
 ## Auth & Session
 | Function | Line | Purpose |
@@ -203,7 +203,7 @@ Mirrored client-side in `js/time-of-day.js` — keep both in sync if changed.
 | `dbForeignKeyExists(PDO $db, string $table, string $fkName): bool` | 4713 | Check a named foreign key exists |
 | `dbDropForeignKeysOnColumn(PDO $db, string $table, string $column, string $referencedTable, array $keepNames = []): void` | 4722 | Discover and drop all FKs on a column referencing a table (except keep-list) |
 | `migratePresetTasksSchema(PDO $db): void` | 4734 | One-time migration: renames legacy `routine_tasks`→`preset_tasks`, adds snapshot/archive columns, backfills data |
-| *(schema bootstrap block, not a function)* | ~4870–5388 | Top-level `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements bootstrapping/migrating the full schema; runs on every request after `migratePresetTasksSchema()` |
+| *(eager schema bootstrap block, not a function)* | ~4870–5388 | Top-level `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements bootstrapping/migrating the ~18 core tables only (not the full schema — see `docs/codex/schema.md`); runs on every request after `migratePresetTasksSchema()`. The remaining tables are created by the lazy `ensure*Table()` helpers listed individually above under their owning category (Notifications, Points/Stars/Levels, Rewards, Streaks), each invoked only from the specific function that needs the table |
 
 ## Other shared files (small, not part of functions.php)
 | File | Exports | Purpose |
