@@ -591,7 +591,7 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
     <title>Goal Management</title>
     <link rel="stylesheet" href="css/main.css?v=3.28.0">
     <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
-    <link rel="stylesheet" href="css/child.css?v=3.28.0">
+    <link rel="stylesheet" href="css/child.css?v=3.28.1">
     <?php else: ?>
     <link rel="stylesheet" href="css/parent.css?v=3.28.0">
     <?php endif; ?>

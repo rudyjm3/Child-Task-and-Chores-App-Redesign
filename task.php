@@ -582,7 +582,7 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
       <link rel="stylesheet" href="css/main.css?v=3.27.0">
       <script src="js/time-of-day.js?v=3.27.0"></script>
     <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'child'): ?>
-    <link rel="stylesheet" href="css/child.css?v=3.27.0">
+    <link rel="stylesheet" href="css/child.css?v=3.28.1">
     <?php else: ?>
     <link rel="stylesheet" href="css/parent.css?v=3.27.0">
     <?php endif; ?>
