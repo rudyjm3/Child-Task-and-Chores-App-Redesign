@@ -1971,6 +1971,9 @@ margin-bottom: 20px;}
         $rewardsActive = $currentPage === 'rewards.php';
         $profileActive = $currentPage === 'profile.php';
     ?>
+    <div class="<?php echo $isParentContext ? 'parent-page' : 'child-page'; ?>">
+    <?php include __DIR__ . '/includes/sidebar.php'; ?>
+    <div class="<?php echo $isParentContext ? 'parent-main' : 'child-main'; ?>">
     <?php if ($isParentContext): ?>
     <header class="parent-header">
       <div class="parent-header__top">
@@ -5991,6 +5994,8 @@ margin-bottom: 20px;}
         })();
     </script>
     <?php endif; ?>
+    </div><!-- /.parent-main or /.child-main -->
+    </div><!-- /.parent-page or /.child-page -->
   <script src="js/number-stepper.js" defer></script>
 <?php if (!empty($isParentNotificationUser)): ?>
     <?php include __DIR__ . '/includes/notifications_parent.php'; ?>

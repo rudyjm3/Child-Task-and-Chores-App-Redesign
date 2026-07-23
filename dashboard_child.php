@@ -755,6 +755,9 @@ function renderStreakCheckSvg($suffix) {
     </script>
 </head>
 <body class="child-theme role-child">
+    <div class="child-page">
+    <?php include __DIR__ . '/includes/sidebar.php'; ?>
+    <div class="child-main">
     <?php
         $dashboardActive = $currentPage === 'dashboard_child.php';
         $routinesActive = $currentPage === 'routine.php';
@@ -1674,6 +1677,8 @@ foreach ($taskCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
       <div class="streak-celebration-message" data-streak-celebration-message>Awesome job!</div>
    </div>
 </div>
+   </div><!-- /.child-main -->
+   </div><!-- /.child-page -->
   <script src="js/number-stepper.js" defer></script>
   <script>
       (function () {

@@ -3219,6 +3219,9 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
       $thHour = (int)date('H');
       $thGreeting = $thHour < 12 ? 'Good Morning!' : ($thHour < 17 ? 'Good Afternoon!' : 'Good Evening!');
     ?>
+    <div class="<?php echo $isParentContext ? 'parent-page' : 'child-page'; ?>">
+    <?php include __DIR__ . '/includes/sidebar.php'; ?>
+    <div class="<?php echo $isParentContext ? 'parent-main' : 'child-main'; ?>">
     <?php if ($isParentContext): ?>
     <header class="parent-header">
       <div class="parent-header__top">
@@ -4651,6 +4654,8 @@ $calendarPremium = !empty($_SESSION['subscription_active']) || !empty($_SESSION[
     <footer>
       <p>Child Task and Chore App - Ver 3.27.0</p>
     </footer>
+    </div><!-- /.parent-main or /.child-main -->
+    </div><!-- /.parent-page or /.child-page -->
   <script src="js/number-stepper.js?v=3.26.0" defer></script>
   <script src="js/preset-picker.js?v=3.27.0"></script>
 <?php if (!empty($isParentNotificationUser)): ?>

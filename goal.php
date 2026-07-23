@@ -1286,10 +1286,10 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
       $ghRawName = trim((string)($_SESSION['name'] ?? ($_SESSION['username'] ?? '')));
       $ghFirstName = $ghRawName !== '' ? explode(' ', $ghRawName)[0] : '';
     ?>
-    <?php if ($isParentContext): ?>
-    <div class="parent-page">
+    <div class="<?php echo $isParentContext ? 'parent-page' : 'child-page'; ?>">
     <?php include __DIR__ . '/includes/sidebar.php'; ?>
-    <div class="parent-main">
+    <div class="<?php echo $isParentContext ? 'parent-main' : 'child-main'; ?>">
+    <?php if ($isParentContext): ?>
     <header class="parent-header">
       <div class="parent-header__top">
         <div class="parent-header__titles">
@@ -2517,10 +2517,8 @@ if (isset($_SESSION['user_id']) && canCreateContent($_SESSION['user_id'])) {
     <footer>
       <p>Child Task and Chore App - Ver 3.28.0</p>
     </footer>
-    <?php if ($isParentContext): ?>
-    </div><!-- /.parent-main -->
-    </div><!-- /.parent-page -->
-    <?php endif; ?>
+    </div><!-- /.parent-main or /.child-main -->
+    </div><!-- /.parent-page or /.child-page -->
   <script src="js/number-stepper.js" defer></script>
   <script>
       const goalCreateModal = document.querySelector('[data-goal-create-modal]');
