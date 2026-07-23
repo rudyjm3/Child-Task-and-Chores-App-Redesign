@@ -66,7 +66,7 @@ No GET-JSON endpoints in this file.
 | `GET children.php` | guard | Per-child detail cards: level/star progress, streaks, points/stars totals+history, today's schedule |
 | `POST [adjust_child_points]` | guard + `$canAdjust` (`main_parent`/`secondary_parent`) + child must belong to family | `adjustChildPoints()`, PRG redirect |
 | `POST [adjust_child_stars]` | same | `adjustChildStars()`, PRG redirect |
-| `GET ?week_schedule=1&child_id=&week_start=` | guard | ⚠️ **Broken**: calls `serveWeekScheduleJson()` (line 56) and `buildChildWeekSchedule()` (line 109) — **neither function is defined anywhere in the repo** (verified via grep across `includes/functions.php` and the whole tree). Any hit on this branch, or normal page load reaching line 109, fatals with "Call to undefined function". This is dead/broken code, likely a leftover from refactoring the same feature that works correctly in `dashboard_parent.php` (`$buildWeekSchedule` closure). **Fix candidate for a future session.** |
+| `GET ?week_schedule=1&child_id=&week_start=` | guard + child must be in caller's own family (`$allowedChildIds`, scoped via `child_profiles.parent_user_id = family_root_id`) | JSON: week's tasks+routines via `serveWeekScheduleJson()` → `buildChildWeekSchedule()` (both now real functions in `includes/functions.php`, promoted from `dashboard_parent.php`'s `$buildWeekSchedule` closure) — **works correctly** |
 
 ## task.php
 Single `if ($_SERVER['REQUEST_METHOD']==='POST'){ if/elseif }` dispatch block, lines 27-273. No GET-JSON/AJAX endpoints in this file.
